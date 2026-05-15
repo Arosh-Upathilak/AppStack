@@ -1,0 +1,363 @@
+// AppStack data model — see plan §2 and SRS REQ-* in comments.
+// Local dev: SQLite. Prod: switch provider to "postgresql" and migrate.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// SQLite has no enums or arrays — use string constants and JSON columns.
+
+model User {
+  id              String    @id @default(cuid())
+  email           String    @unique
+  hashedPassword  String?
+  name            String?
+  image           String?
+  emailVerifiedAt DateTime?
+  status          String    @default("ACTIVE") // ACTIVE | SUSPENDED | DELETED
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  roles            Role[]
+  sellerProfile    SellerProfile?
+  accounts         Account[]
+  sessions         Session[]
+  paymentMethods   PaymentMethod[]
+  subscriptions    Subscription[]   @relation("BuyerSubs")
+  products         Product[]        @relation("SellerProducts")
+  refundRequests   RefundRequest[]
+  reviews          Review[]
+  earnings         Earning[]
+  payouts          Payout[]
+  apiKeys          ApiKey[]
+  otps             Otp[]
+  passwordResets   PasswordReset[]
+}
+
+// REQ-11: a user can hold multiple roles
+model Role {
+  id     String @id @default(cuid())
+  userId String
+  role   String // BUYER | SELLER | ADMIN
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, role])
+}
+
+// REQ-10: seller approval gate
+model SellerProfile {
+  userId       String   @id
+  status       String   @default("PENDING") // PENDING | APPROVED | REJECTED
+  companyName  String?
+  payoutEmail  String?
+  stripeAcctId String?
+  approvedById String?
+  approvedAt   DateTime?
+  rejectedReason String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// NextAuth adapter tables -----------------------------------------------------
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+// ----------------------------------------------------------------------------
+
+// REQ-9, REQ-15: email OTP for registration verification and alt-email subscribe
+model Otp {
+  id         String   @id @default(cuid())
+  userId     String?
+  email      String
+  codeHash   String
+  purpose    String   // REGISTER | SUBSCRIBE_ALT_EMAIL | LOGIN
+  consumedAt DateTime?
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+}
+
+// REQ-13: password reset
+model PasswordReset {
+  id         String   @id @default(cuid())
+  userId     String
+  tokenHash  String
+  consumedAt DateTime?
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// REQ-40-46: products with admin-approval lifecycle
+model Product {
+  id               String   @id @default(cuid())
+  sellerId         String
+  title            String
+  slug             String   @unique
+  description      String
+  shortDescription String
+  category         String
+  similarTo        String   @default("[]") // JSON array of strings
+  status           String   @default("DRAFT") // DRAFT | PENDING | PUBLISHED | REJECTED | PENDING_EDIT | PENDING_DELETE
+  refundsEnabled   Boolean  @default(true)
+  webhookUrl       String?
+  webhookSecret    String?
+  hue              String?  // brand color hue for UI parity with mock
+  rating           Float    @default(0)
+  reviewsCount     Int      @default(0)
+  rejectedReason   String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  seller        User              @relation("SellerProducts", fields: [sellerId], references: [id], onDelete: Cascade)
+  plans         Plan[]
+  subscriptions Subscription[]
+  reviews       Review[]
+  drafts        ProductDraft[]
+  webhookDeliveries WebhookDelivery[]
+}
+
+// REQ-48: edits-on-published persist here until admin re-approves
+model ProductDraft {
+  id        String   @id @default(cuid())
+  productId String
+  diff      String   // JSON
+  createdAt DateTime @default(now())
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+}
+
+// REQ-42: plans
+model Plan {
+  id           String   @id @default(cuid())
+  productId    String
+  name         String
+  priceCents   Int
+  currency     String   @default("USD")
+  interval     String   @default("month") // month | year
+  features     String   @default("[]") // JSON array of strings
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  product      Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  subscriptions Subscription[]
+
+  @@index([productId])
+}
+
+// REQ-14-26: subscriptions
+model Subscription {
+  id                  String   @id @default(cuid())
+  buyerId             String
+  productId           String
+  planId              String
+  recipientEmail      String
+  status              String   @default("PENDING") // PENDING | ACTIVE | PAUSED | CANCEL_PENDING | CANCELLED
+  stripeSubId         String?
+  currentPeriodStart  DateTime?
+  currentPeriodEnd    DateTime?
+  cancelRequestedAt   DateTime?
+  cancelReason        String?
+  cancelledAt         DateTime?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  buyer    User     @relation("BuyerSubs", fields: [buyerId], references: [id], onDelete: Cascade)
+  product  Product  @relation(fields: [productId], references: [id])
+  plan     Plan     @relation(fields: [planId], references: [id])
+  invoices Invoice[]
+  consents SubscriptionConsent[]
+}
+
+// ORQ-1, ORQ-2: GDPR consent records per subscription
+model SubscriptionConsent {
+  id             String   @id @default(cuid())
+  subscriptionId String
+  type           String   // SHARE_EMAIL | DATA_PROTECTION
+  agreedAt       DateTime @default(now())
+  ipAddress      String?
+  userAgent      String?
+  textHash       String
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+}
+
+// REQ-31-32: payment methods (Stripe-owned; we only keep brand/last4)
+model PaymentMethod {
+  id           String   @id @default(cuid())
+  userId       String
+  stripePmId   String   @unique
+  brand        String
+  last4        String
+  expMonth     Int
+  expYear      Int
+  isPrimary    Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// REQ-19, REQ-29: invoices
+model Invoice {
+  id             String   @id @default(cuid())
+  subscriptionId String
+  number         String   @unique
+  amountCents    Int
+  currency       String   @default("USD")
+  status         String   @default("OPEN") // OPEN | PAID | OVERDUE | REFUNDED | VOID
+  issuedAt       DateTime @default(now())
+  paidAt         DateTime?
+  pdfUrl         String?
+  subscription   Subscription      @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  attempts       PaymentAttempt[]
+  refundRequests RefundRequest[]
+}
+
+// REQ-34, REQ-66: payment retries
+model PaymentAttempt {
+  id          String   @id @default(cuid())
+  invoiceId   String
+  attemptNo   Int
+  status      String   // SUCCESS | FAILED | PENDING
+  errorCode   String?
+  attemptedAt DateTime @default(now())
+  invoice     Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+}
+
+// REQ-36-39: refunds
+model RefundRequest {
+  id            String   @id @default(cuid())
+  invoiceId     String
+  requestedById String
+  status        String   @default("PENDING") // PENDING | APPROVED | REJECTED | EXECUTED | FAILED
+  reason        String?
+  decidedById   String?
+  decidedAt     DateTime?
+  executedAt    DateTime?
+  createdAt     DateTime @default(now())
+  invoice       Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  requestedBy   User     @relation(fields: [requestedById], references: [id], onDelete: Cascade)
+}
+
+// REQ-5, REQ-7: reviews
+model Review {
+  id        String   @id @default(cuid())
+  productId String
+  buyerId   String
+  rating    Int
+  body      String
+  createdAt DateTime @default(now())
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  buyer     User     @relation(fields: [buyerId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, buyerId])
+}
+
+// REQ-59-61: locked earnings until release
+model Earning {
+  id             String   @id @default(cuid())
+  sellerId       String
+  subscriptionId String?
+  invoiceId      String?
+  amountCents    Int
+  currency       String   @default("USD")
+  lockedUntil    DateTime
+  releasedAt     DateTime?
+  kind           String   @default("SALE") // SALE | REFUND_REVERSAL | ADJUSTMENT
+  createdAt      DateTime @default(now())
+  seller         User     @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+}
+
+// REQ-62-64: payouts
+model Payout {
+  id          String   @id @default(cuid())
+  sellerId    String
+  amountCents Int
+  currency    String   @default("USD")
+  status      String   @default("PENDING") // PENDING | APPROVED | REJECTED | EXECUTED | FAILED
+  decidedById String?
+  decidedAt   DateTime?
+  executedAt  DateTime?
+  failureReason String?
+  createdAt   DateTime @default(now())
+  seller      User     @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+}
+
+// REQ-69-70: outbound webhook deliveries with retries
+model WebhookDelivery {
+  id          String   @id @default(cuid())
+  productId   String
+  event       String
+  payload     String   // JSON
+  status      String   @default("PENDING") // PENDING | DELIVERED | FAILED
+  attempts    Int      @default(0)
+  lastError   String?
+  nextRetryAt DateTime?
+  deliveredAt DateTime?
+  createdAt   DateTime @default(now())
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([status, nextRetryAt])
+}
+
+// audit
+model EventLog {
+  id        String   @id @default(cuid())
+  kind      String
+  actorId   String?
+  targetId  String?
+  payload   String   // JSON
+  createdAt DateTime @default(now())
+}
+
+// REQ-61: configurable system parameters
+model SystemConfig {
+  key   String @id
+  value String
+}
+
+// REQ-68, REQ-73: developer API keys (live/sandbox)
+model ApiKey {
+  id          String   @id @default(cuid())
+  sellerId    String
+  mode        String   @default("LIVE") // LIVE | SANDBOX
+  label       String?
+  hash        String   @unique
+  prefix      String
+  lastUsedAt  DateTime?
+  revokedAt   DateTime?
+  createdAt   DateTime @default(now())
+  seller      User     @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+}
