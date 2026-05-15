@@ -1,0 +1,10 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "nextjs",
+  "installCommand": "npm ci --ignore-scripts",
+  "buildCommand": "npx prisma generate && npm run build",
+  "outputDirectory": ".next",
+  "env": {
+    "SKIP_ENV_VALIDATION": "1"
+  }
+}
