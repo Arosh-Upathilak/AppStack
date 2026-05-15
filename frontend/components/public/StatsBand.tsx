@@ -3,10 +3,10 @@
 import React from 'react';
 
 const STATS = [
-  { target: 10000, unit: '+',   label: 'Active subscribers', em: 'Active subscribers', rest: 'across 64 countries' },
-  { target: 248,   unit: '',    label: 'Verified apps',       em: 'Verified apps',       rest: 'integrated and audited' },
-  { target: 8,     unit: 'min', label: 'Average setup',       em: 'Average',             rest: 'setup, end‑to‑end' },
-  { target: 71,    unit: '',    label: 'Customer NPS',        em: 'Customer NPS',        rest: ', last twelve months' },
+  { target: 30,  unit: 'k',    label: 'Peak users',       em: 'Concurrent users',   rest: 'supported at peak' },
+  { target: 100, unit: '+',    label: 'Products',         em: 'SaaS products',      rest: 'across the marketplace' },
+  { target: 30,  unit: ' days', label: 'Refund window',   em: '30-day',             rest: 'refund window for buyers' },
+  { target: 3,   unit: '',     label: 'Payment retries',  em: 'Smart retries',      rest: 'on failed card charges' },
 ];
 
 function easeOutCubic(t: number) { return 1 - Math.pow(1 - t, 3); }

@@ -3,9 +3,9 @@
 import React from 'react';
 
 const STEPS = [
-  { n: '01', title: 'Connect', desc: 'Browse 248+ verified apps or bring your own. SSO and finance feeds sync in seconds.' },
-  { n: '02', title: 'Manage',  desc: 'Pick plans, adjust seats, set renewal alerts. Changes propagate to every vendor automatically.' },
-  { n: '03', title: 'Optimise', desc: 'Track spend trends, seat utilisation and upcoming renewals. Cut wasted licences before they renew.' },
+  { n: '01', title: 'Register', desc: 'Create a buyer or seller account in a few steps. Email is verified with a one-time code.' },
+  { n: '02', title: 'Subscribe', desc: 'Browse the marketplace, pick a plan, save a card, and accept the consent to share your email with the seller.' },
+  { n: '03', title: 'Manage', desc: 'Upgrade, downgrade or cancel from one dashboard. Refunds within 30 days, approved by an administrator.' },
 ];
 
 export default function StepsRail() {

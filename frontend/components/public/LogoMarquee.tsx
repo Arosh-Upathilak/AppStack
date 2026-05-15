@@ -27,7 +27,7 @@ import React from 'react';
 export default function LogoMarquee() {
   return (
     <section className="ps-marquee-band">
-      <div className="ps-marquee-label">Quietly running subscription stacks at</div>
+      <div className="ps-marquee-label">A growing marketplace of SaaS products</div>
       <div className="ps-marquee">
         {[...MARKS, ...MARKS].map((m, i) => (
           <Wordmark key={i} name={m.name} glyph={m.glyph} />

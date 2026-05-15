@@ -21,21 +21,20 @@ export default function Hero() {
               <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
             </svg>
           </span>
-          SOC 2 Type II verified
+          GDPR-compliant
           <span className="sep"/>
-          Trusted by <strong>10,000+ teams</strong>
+          Cloudflare-proxied &amp; reCAPTCHA-protected
         </span>
 
         {/* Headline */}
         <h1 className="ps-headline">
-          <span className="line"><span>Subscription infrastructure</span></span>
-          <span className="line"><span>for <span className="accent">modern software teams</span>.</span></span>
+          <span className="line"><span>All your SaaS subscriptions,</span></span>
+          <span className="line"><span>in <span className="accent">one dashboard</span>.</span></span>
         </h1>
 
         {/* Sub */}
         <p className="ps-hero-sub">
-          AppStack centralises every SaaS licence, invoice and renewal in one calm dashboard —
-          so finance, IT and engineering all work from the same source of truth.
+          Discover SaaS products, subscribe in a click, and manage every plan, payment and invoice from a single place — with automated billing and refunds built in.
         </p>
 
         {/* CTA */}

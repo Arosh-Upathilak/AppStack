@@ -22,11 +22,9 @@ export default function PublicNav() {
         </Link>
 
         <div className="psite-nav-links">
-          <Link href="#features">Platform</Link>
+          <Link href="/#features">Platform</Link>
           <Link href="/marketplace">Marketplace</Link>
-          <a href="#pricing">Pricing</a>
-          <a href="#docs">Docs</a>
-          <Link href="/about">Customers</Link>
+          <Link href="/about">About</Link>
         </div>
 
         <div className="psite-nav-cta">
@@ -53,11 +51,9 @@ export default function PublicNav() {
 
       {menuOpen && (
         <div className="pub-mobile-menu">
-          <Link href="#features" className="pub-mobile-link" onClick={() => setMenuOpen(false)}>Platform</Link>
+          <Link href="/#features" className="pub-mobile-link" onClick={() => setMenuOpen(false)}>Platform</Link>
           <Link href="/marketplace" className="pub-mobile-link" onClick={() => setMenuOpen(false)}>Marketplace</Link>
-          <a href="#pricing" className="pub-mobile-link" onClick={() => setMenuOpen(false)}>Pricing</a>
-          <a href="#docs" className="pub-mobile-link" onClick={() => setMenuOpen(false)}>Docs</a>
-          <Link href="/about" className="pub-mobile-link" onClick={() => setMenuOpen(false)}>Customers</Link>
+          <Link href="/about" className="pub-mobile-link" onClick={() => setMenuOpen(false)}>About</Link>
           <div className="pub-mobile-auth">
             <Link href="/login" className="btn btn-secondary" style={{ flex: 1, justifyContent: 'center' }}>Log in</Link>
             <Link href="/register" className="btn btn-primary" style={{ flex: 1, justifyContent: 'center' }}>Get started</Link>

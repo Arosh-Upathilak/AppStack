@@ -30,7 +30,10 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  return NextResponse.next();
+  // Forward the current pathname so server-component layouts can read it
+  const res = NextResponse.next();
+  res.headers.set('x-pathname', req.nextUrl.pathname);
+  return res;
 }
 
 export const config = {

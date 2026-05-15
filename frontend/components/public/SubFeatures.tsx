@@ -10,19 +10,18 @@ const CARDS = [
         <polyline points="9 12 11 14 15 10"/>
       </svg>
     ),
-    title: 'Enterprise-grade security',
-    desc: 'SOC 2 Type II certified. PII never exposed to sellers. GDPR-ready consent records, immutable audit trail, customer-managed keys on request.',
+    title: 'Privacy by design',
+    desc: 'GDPR-aligned consent recorded per subscription. Buyer PII is never shown to sellers. Cards stored with our PCI-compliant processor — never on our servers. Cloudflare-proxied and reCAPTCHA-protected.',
   },
   {
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-        <line x1="18" y1="20" x2="18" y2="10"/>
-        <line x1="12" y1="20" x2="12" y2="4"/>
-        <line x1="6"  y1="20" x2="6"  y2="14"/>
+        <path d="M9 11l3 3L22 4"/>
+        <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
       </svg>
     ),
-    title: 'Spend analytics',
-    desc: 'Trajectory charts, MRR tracking, seat utilisation alerts and forecast projections — built on the same data model finance already trusts.',
+    title: 'Reviewed by admins',
+    desc: 'Sellers are manually approved before going live. New products and product edits go through an admin review before they reach the public marketplace.',
   },
   {
     icon: (
@@ -31,8 +30,8 @@ const CARDS = [
         <polyline points="8 6 2 12 8 18"/>
       </svg>
     ),
-    title: 'Developer-first API',
-    desc: 'A documented REST surface with a complete sandbox, generated SDKs in five languages, and idempotency baked in. Integrate in minutes, not weeks.',
+    title: 'REST API &amp; webhooks',
+    desc: 'Sellers get a documented REST API and webhooks to integrate their SaaS with AppStack. A sandbox environment is available for testing before going live.',
   },
 ];
 

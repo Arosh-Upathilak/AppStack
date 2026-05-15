@@ -4,19 +4,19 @@ import React from 'react';
 
 const QUOTES = [
   {
-    body: 'AppStack cut our SaaS spend review from four hours a month to fifteen minutes. The dashboard pays for itself in the first week.',
-    nm: 'Sarah Jenkins', rl: 'VP Engineering · TechCorp',
-    av: 'SJ', grad: 'linear-gradient(135deg,#1247a9,#003d9b)',
+    body: 'Browse a catalog of SaaS products, subscribe in a click, and manage every active plan, invoice and saved card from a single dashboard. Cancel or upgrade any time.',
+    nm: 'For buyers', rl: 'Subscribe · manage · request refunds',
+    av: 'B', grad: 'linear-gradient(135deg,#1247a9,#003d9b)',
   },
   {
-    body: 'We used to miss renewals constantly. Now every subscription is visible, searchable, and quietly under control.',
-    nm: 'Marcus Rivera', rl: 'CTO · LogisticsPro',
-    av: 'MR', grad: 'linear-gradient(135deg,#7c3aed,#4c1d95)',
+    body: 'List your SaaS, set plans and pricing, and let AppStack handle payment collection, retries and invoicing. Track sales, refunds and payouts from the seller dashboard.',
+    nm: 'For sellers', rl: 'List products · collect payments · withdraw earnings',
+    av: 'S', grad: 'linear-gradient(135deg,#7c3aed,#4c1d95)',
   },
   {
-    body: 'As a seller, the webhook integration took thirty minutes. Our platform now activates customer plans automatically.',
-    nm: 'Priya Shah', rl: 'Founder · Atlas SaaS',
-    av: 'PS', grad: 'linear-gradient(135deg,#fb923c,#c2410c)',
+    body: 'A documented REST API and signed webhooks for activating, changing and cancelling subscriptions. Test end-to-end in a sandbox environment before going live.',
+    nm: 'For developers', rl: 'REST API · webhooks · sandbox',
+    av: 'D', grad: 'linear-gradient(135deg,#fb923c,#c2410c)',
   },
 ];
 
@@ -55,8 +55,8 @@ export default function Testimonials() {
     <section className="ps-testi">
       <div className="psite-wrap">
         <div className="ps-sec-head psite-reveal">
-          <span className="ps-sec-eyebrow">Customers</span>
-          <h2 className="ps-sec-title">Loved by teams that <span className="accent">value their time</span>.</h2>
+          <span className="ps-sec-eyebrow">Built for</span>
+          <h2 className="ps-sec-title">Three sides, <span className="accent">one platform</span>.</h2>
         </div>
 
         <div

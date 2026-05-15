@@ -9,11 +9,11 @@ import Testimonials from '@/components/public/Testimonials';
 import CtaBlock from '@/components/public/CtaBlock';
 
 export const metadata: Metadata = {
-  title: 'AppStack — Subscription infrastructure for modern software teams',
-  description: 'AppStack centralises every SaaS licence, invoice and renewal in one calm dashboard — so finance, IT and engineering all work from the same source of truth.',
+  title: 'AppStack — All your SaaS subscriptions in one dashboard',
+  description: 'Discover SaaS products, subscribe in a click, and manage every plan, payment and invoice from one place. For sellers: list products and integrate via REST API & webhooks.',
   openGraph: {
-    title: 'AppStack — Subscription infrastructure for modern software teams',
-    description: 'Centralise every SaaS licence, invoice and renewal in one calm dashboard.',
+    title: 'AppStack — All your SaaS subscriptions in one dashboard',
+    description: 'Discover, subscribe to and manage SaaS products from one dashboard. Sellers integrate via REST API and webhooks.',
     type: 'website',
   },
 };
