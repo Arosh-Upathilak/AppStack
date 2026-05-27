@@ -70,6 +70,7 @@ export const userOtpIpLimiter = createLimiter(
   "Too many OTP requests"
 );
 
+
 // Reset link send by IP
 export const userResetEmailIpLimiter = createLimiter(
   15 * 60 * 1000,

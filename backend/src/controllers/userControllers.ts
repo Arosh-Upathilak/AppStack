@@ -8,6 +8,8 @@ import { transporter } from "../utils/nodeMailer";
 import { otpTemplate } from "../template/otpEmail";
 import { redisClient } from "../config/redis";
 import { resetPasswordTemplate } from "../template/resetPasswordEmail";
+import { createAccountTemplate } from "../template/createAccount";
+import axios from "axios";
 
 // OTP Expire time set
 const OTP_EXPIRY = 300;
@@ -38,11 +40,14 @@ const verifyOTP = async (verifyToken: string, inputOtp: string) => {
 
 // Create User
 const createUser = asyncHandler(async (req: Request, res: Response) => {
-  const { firstName,lastName, email, password, role } = req.body;
+  const { firstName, lastName, email, password, role, token } = req.body;
 
   // Validation
   if (!firstName || !lastName || !email || !password || !role) {
-    throw new AppError("Email, firstName, lastName and password are required", 400);
+    throw new AppError(
+      "Email, firstName, lastName and password are required",
+      400,
+    );
   }
 
   if (!emailRegex.test(email)) {
@@ -53,10 +58,42 @@ const createUser = asyncHandler(async (req: Request, res: Response) => {
     throw new AppError("Password must contains at least 8 characters", 400);
   }
 
+  // Verify reCAPTCHA
+  const recaptchaResponse = await axios.post(
+    "https://www.google.com/recaptcha/api/siteverify",
+    null,
+    {
+      params: {
+        secret: process.env.RECAPTCHA_SECRET_KEY,
+        response: token,
+      },
+    },
+  );
+
+  // reCAPTCHA data
+  const recaptchaData = recaptchaResponse.data;
+
+  if (recaptchaData.action !== "create_account") {
+    throw new AppError("Invalid reCAPTCHA action", 400);
+  }
+
+  // Protection
+  if (!recaptchaData.success) {
+    throw new AppError("reCAPTCHA verification failed", 400);
+  }
+
+  // Score protection
+  if (recaptchaData.score < 0.5) {
+    throw new AppError("Bot activity detected", 400);
+  }
+
   // Check Existing User
   const existsUser = await prisma.user.findFirst({
     where: {
       email: email,
+      roles: {
+        has: role,
+      },
     },
   });
 
@@ -86,7 +123,7 @@ const createUser = asyncHandler(async (req: Request, res: Response) => {
     await redisClient.del(`verifyToken:${verifyToken}`);
     await redisClient.del(`user:${verifyToken}`);
 
-    throw new AppError("Failed to send OTP email" , 500);
+    throw new AppError("Failed to send OTP email", 500);
   }
 
   // Hash Password
@@ -113,7 +150,8 @@ const createUser = asyncHandler(async (req: Request, res: Response) => {
 
 // Login User
 const loginUser = asyncHandler(async (req: Request, res: Response) => {
-  const { email, password } = req.body;
+  const { email, password, token } = req.body;
+  console.log("token", token);
 
   // Validation
   if (!email || !password) {
@@ -122,6 +160,31 @@ const loginUser = asyncHandler(async (req: Request, res: Response) => {
 
   if (!emailRegex.test(email)) {
     throw new AppError("Invalid email", 400);
+  }
+
+  // Verify reCAPTCHA
+  const recaptchaResponse = await axios.post(
+    "https://www.google.com/recaptcha/api/siteverify",
+    null,
+    {
+      params: {
+        secret: process.env.RECAPTCHA_SECRET_KEY,
+        response: token,
+      },
+    },
+  );
+
+  // reCAPTCHA data
+  const recaptchaData = recaptchaResponse.data;
+
+  // Protection
+  if (!recaptchaData.success) {
+    throw new AppError("reCAPTCHA verification failed", 400);
+  }
+
+  // Score protection
+  if (recaptchaData.score < 0.5) {
+    throw new AppError("Bot activity detected", 400);
   }
 
   // Check User
@@ -140,6 +203,10 @@ const loginUser = asyncHandler(async (req: Request, res: Response) => {
       `Please verify the ${existsUser.roles} before login`,
       400,
     );
+  }
+
+  if (!existsUser.password) {
+    throw new Error("Password not found");
   }
 
   // Compare Password
@@ -186,13 +253,12 @@ const sendOtp = asyncHandler(async (req: Request, res: Response) => {
     };
 
     await transporter.sendMail(mailOptions);
-  } catch  {
+  } catch {
     await redisClient.del(`verifyToken:${verifyToken}`);
     await redisClient.del(`user:${verifyToken}`);
 
     throw new AppError("Failed to send OTP email", 500);
   }
-
   return res.status(200).json({
     success: true,
     message: "OTP sent successfully",
@@ -253,7 +319,7 @@ const verifyAccount = asyncHandler(async (req: Request, res: Response) => {
 // Forgot password
 const forgotPasswordSendEmail = asyncHandler(
   async (req: Request, res: Response) => {
-    const { email } = req.body;
+    const { email, token } = req.body;
     // Validation
     if (!email) {
       throw new AppError("Email is required", 400);
@@ -263,8 +329,36 @@ const forgotPasswordSendEmail = asyncHandler(
       throw new AppError("Invalid email", 400);
     }
 
-    // Check User
+    // Verify reCAPTCHA
+    const recaptchaResponse = await axios.post(
+      "https://www.google.com/recaptcha/api/siteverify",
+      null,
+      {
+        params: {
+          secret: process.env.RECAPTCHA_SECRET_KEY,
+          response: token,
+        },
+      },
+    );
 
+    // reCAPTCHA data
+    const recaptchaData = recaptchaResponse.data;
+
+    if (recaptchaData.action !== "forgot_password") {
+      throw new AppError("Invalid reCAPTCHA action", 400);
+    }
+
+    // Protection
+    if (!recaptchaData.success) {
+      throw new AppError("reCAPTCHA verification failed", 400);
+    }
+
+    // Score protection
+    if (recaptchaData.score < 0.5) {
+      throw new AppError("Bot activity detected", 400);
+    }
+
+    // Check User
     const existsUser = await prisma.user.findFirst({
       where: {
         email,
@@ -293,7 +387,7 @@ const forgotPasswordSendEmail = asyncHandler(
         html: resetPasswordTemplate(resetLink),
       };
       await transporter.sendMail(mailOptions);
-    } catch  {
+    } catch {
       await redisClient.del(`reset:${resetToken}`);
       throw new AppError("Failed to send reset email", 500);
     }
@@ -360,11 +454,66 @@ const resetPassword = asyncHandler(async (req: Request, res: Response) => {
   });
 });
 
+// Google login
+const googleLogin = asyncHandler(async (req: Request, res: Response) => {
+  const { email, name } = req.body;
+  if (!email) {
+    throw new AppError("Email is required", 400);
+  }
+  const nameArray = name?.trim().split(" ") || [];
+
+  const firstName = nameArray[0] || "";
+
+  const lastName = nameArray.slice(1).join(" ");
+
+  let existsUser = await prisma.user.findFirst({
+    where: {
+      email,
+    },
+  });
+
+  if (!existsUser) {
+    existsUser = await prisma.user.create({
+      data: {
+        firstName,
+        lastName,
+        email,
+        roles: { set: ["BUYER"] },
+        isVerified: true,
+      },
+    });
+
+    // send the user create acknowledge email
+    try {
+      const mailOptions = {
+        from: process.env.EMAIL_USER,
+        to: email,
+        subject: "Congratulations! Your AppStack Account Has Been Created 🎉",
+        html: createAccountTemplate(name, email),
+      };
+      await transporter.sendMail(mailOptions);
+    } catch {
+      throw new AppError("Failed to send reset email", 500);
+    }
+  }
+
+  return res.status(200).json({
+    success: true,
+    message: "Login Successfully",
+    user: {
+      id: existsUser.id,
+      email: existsUser.email,
+      role: existsUser.roles,
+    },
+  });
+});
+
 export {
   createUser,
   loginUser,
   sendOtp,
   verifyAccount,
   forgotPasswordSendEmail,
-  resetPassword
+  resetPassword,
+  googleLogin,
 };
