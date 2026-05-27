@@ -67,7 +67,7 @@ export const authOptions: NextAuthOptions = {
 
       try {
         const res = await axios.post(
-          `${process.env.NEXT_PUBLIC_API_BASE_URL}/auth/google-signin`,
+          `${process.env.NEXT_PUBLIC_API_BASE_URL}/auth/google-login`,
           {
             email: user.email,
             name: user.name,
@@ -83,11 +83,10 @@ export const authOptions: NextAuthOptions = {
           (user as any).sellerStatus = backendUser.sellerStatus ?? null;
         }
       } catch (err) {
-        // TODO: when Arosh ships /auth/google-signin, remove this fallback.
-        // Stub: treat the Google user as a fresh BUYER so they can use the
-        // app locally even before backend integration lands.
+        // Fallback: treat the Google user as a fresh BUYER so they can use the
+        // app locally even if backend connection fails.
         console.warn(
-          "[next-auth] /auth/google-signin not available — using BUYER stub",
+          "[next-auth] /auth/google-login not available — using BUYER stub",
           (err as any)?.message,
         );
         (user as any).id = (user as any).id ?? account.providerAccountId;
