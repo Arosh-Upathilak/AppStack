@@ -10,7 +10,7 @@ type IconName =
   | 'users' | 'cube' | 'code' | 'play' | 'book' | 'layers' | 'bolt' | 'bank' | 'calendar'
   | 'refresh' | 'trash' | 'edit' | 'copy' | 'eye' | 'eye_off' | 'link' | 'cloud' | 'flask'
   | 'cpu' | 'target' | 'inbox' | 'activity' | 'moon' | 'sun' | 'logout' | 'menu' | 'help'
-  | 'mail' | 'lock' | 'tag' | 'package' | 'rocket';
+  | 'mail' | 'lock' | 'tag' | 'package' | 'rocket' | 'clock';
 
 interface IconProps extends Omit<React.SVGProps<SVGSVGElement>, 'stroke'> {
   name: IconName;
@@ -90,6 +90,7 @@ export default function Icon({ name, size = 16, stroke = 1.75, ...rest }: IconPr
     tag: <><path d="M3 12V3h9l9 9-9 9z"/><circle cx="8" cy="8" r="1.5"/></>,
     package: <><path d="M21 8l-9-5-9 5 9 5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></>,
     rocket: <><path d="M5 19c0-7 6-15 14-15 0 8-8 14-15 14"/><path d="M9 11l4 4"/><circle cx="16" cy="8" r="1.4" fill="currentColor" stroke="none"/></>,
+    clock: <><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></>,
   };
 
   return <svg {...svgProps}>{paths[name] ?? null}</svg>;
