@@ -1,6 +1,8 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
+import { useSession } from 'next-auth/react';
 import CardWallet from '@/components/buyer/CardWallet';
 import ConsentList from '@/components/buyer/ConsentList';
 import ProfilePanel from '@/components/buyer/ProfilePanel';
@@ -10,6 +12,10 @@ type Tab = 'profile' | 'cards' | 'consents' | 'notifications';
 
 export default function BuyerSettingsPage() {
   const [tab, setTab] = useState<Tab>('profile');
+  const { data: session } = useSession();
+
+  const roles = ((session?.user as any)?.role ?? []) as string[];
+  const showBecomeSeller = !roles.includes('SELLER');
 
   const tabs: { id: Tab; label: string; icon: Parameters<typeof Icon>[0]['name'] }[] = [
     { id: 'profile', label: 'Profile', icon: 'users' },
@@ -34,6 +40,19 @@ export default function BuyerSettingsPage() {
               <span>{t.label}</span>
             </button>
           ))}
+          {showBecomeSeller && (
+            <>
+              <div style={{ height: 1, background: 'var(--line-soft, var(--line))', margin: '10px 4px' }} />
+              <Link
+                href="/buyer/become-seller"
+                className="sb-link"
+                style={{ width: '100%', textAlign: 'left' }}
+              >
+                <Icon name="package" size={14} />
+                <span>Become a Seller</span>
+              </Link>
+            </>
+          )}
         </nav>
       </aside>
       <section style={{ maxWidth: 760 }}>

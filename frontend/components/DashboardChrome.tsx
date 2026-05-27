@@ -9,13 +9,15 @@ import TweaksPanel from './tweaks/TweaksPanel';
 import { useTweaks } from './tweaks/useTweaks';
 import { PRODUCTS, SUBSCRIPTIONS } from '@/data/mock';
 
+type ChromeRole = 'buyer' | 'seller' | 'admin';
+
 interface DashboardChromeProps {
-  role: 'buyer' | 'seller';
+  role: ChromeRole;
   children: React.ReactNode;
 }
 
-function buildCrumbs(role: 'buyer' | 'seller', pathname: string): string[] {
-  const base = role === 'seller' ? 'Seller' : 'AppStack';
+function buildCrumbs(role: ChromeRole, pathname: string): string[] {
+  const base = role === 'seller' ? 'Seller' : role === 'admin' ? 'Admin' : 'AppStack';
   const segs = pathname.split('/').filter(Boolean); // e.g. ['buyer','marketplace','flexaro-crm']
 
   if (role === 'buyer') {
@@ -36,6 +38,7 @@ function buildCrumbs(role: 'buyer' | 'seller', pathname: string): string[] {
     }
     if (segs[1] === 'invoices') return [base, 'Invoices'];
     if (segs[1] === 'settings') return [base, 'Settings'];
+    if (segs[1] === 'become-seller') return [base, 'Become a Seller'];
   }
 
   if (role === 'seller') {
@@ -44,6 +47,14 @@ function buildCrumbs(role: 'buyer' | 'seller', pathname: string): string[] {
     if (segs[1] === 'analytics') return [base, 'Analytics'];
     if (segs[1] === 'wallet') return [base, 'Wallet'];
     if (segs[1] === 'settings') return [base, 'Settings'];
+  }
+
+  if (role === 'admin') {
+    if (segs.length === 1) return [base, 'Dashboard'];
+    if (segs[1] === 'sellers') {
+      if (segs[2] === 'pending') return [base, 'Sellers', 'Pending Approvals'];
+      return [base, 'Sellers'];
+    }
   }
 
   return [base];
@@ -56,6 +67,8 @@ export function useToastContext() {
 export const ToastContext = React.createContext<{
   toast: (msg: string, icon?: string) => void;
 }>({ toast: () => {} });
+
+export type { ChromeRole };
 
 export default function DashboardChrome({ role, children }: DashboardChromeProps) {
   const pathname = usePathname();

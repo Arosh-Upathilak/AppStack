@@ -1,6 +1,7 @@
 import axios from "axios";
 import NextAuth, { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
+import GoogleProvider from "next-auth/providers/google";
 
 const MAX_SESSION_AGE = 30 * 24 * 60 * 60; // 30 days
 const INACTIVE_TIMEOUT = 7 * 24 * 60 * 60; // 7 days
@@ -40,9 +41,63 @@ export const authOptions: NextAuthOptions = {
         }
       },
     }),
+
+    GoogleProvider({
+      clientId: process.env.GOOGLE_CLIENT_ID ?? "",
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? "",
+      // Google's email is always verified so we can trust it for sign-in.
+      authorization: {
+        params: { prompt: "select_account" },
+      },
+    }),
   ],
 
   callbacks: {
+    /**
+     * Sync Google sign-ins to our backend. The backend creates the user if
+     * needed and returns our app-specific shape (id + role + sellerStatus).
+     * We merge that onto the `user` object so the jwt callback picks it up.
+     *
+     * If the backend endpoint doesn't exist yet (Arosh hasn't shipped
+     * /auth/google-signin), we fall back to a stub BUYER session so the
+     * Google flow stays usable for local dev.
+     */
+    async signIn({ user, account }) {
+      if (account?.provider !== "google") return true;
+
+      try {
+        const res = await axios.post(
+          `${process.env.NEXT_PUBLIC_API_BASE_URL}/auth/google-signin`,
+          {
+            email: user.email,
+            name: user.name,
+            image: user.image,
+            providerAccountId: account.providerAccountId,
+          },
+        );
+        const backendUser = res.data?.user;
+        if (backendUser) {
+          // Merge backend's id/role/sellerStatus into the user object.
+          (user as any).id = backendUser.id;
+          (user as any).role = backendUser.role;
+          (user as any).sellerStatus = backendUser.sellerStatus ?? null;
+        }
+      } catch (err) {
+        // TODO: when Arosh ships /auth/google-signin, remove this fallback.
+        // Stub: treat the Google user as a fresh BUYER so they can use the
+        // app locally even before backend integration lands.
+        console.warn(
+          "[next-auth] /auth/google-signin not available — using BUYER stub",
+          (err as any)?.message,
+        );
+        (user as any).id = (user as any).id ?? account.providerAccountId;
+        (user as any).role = ["BUYER"];
+        (user as any).sellerStatus = null;
+      }
+
+      return true;
+    },
+
     async jwt({ token, user, trigger, session }) {
       const now = Math.floor(Date.now() / 1000);
 
@@ -50,6 +105,7 @@ export const authOptions: NextAuthOptions = {
       if (user) {
         token.id = (user as any).id;
         token.role = (user as any).role;
+        token.sellerStatus = (user as any).sellerStatus ?? null;
         // Fixed login time
         token.loginTime = now;
         // Last activity time
@@ -82,6 +138,7 @@ export const authOptions: NextAuthOptions = {
       if (token?.id) {
         (session.user as any).id = token.id;
         (session.user as any).role = token.role;
+        (session.user as any).sellerStatus = token.sellerStatus ?? null;
         (session as any).loginTime = token.loginTime;
         (session as any).lastActive = token.lastActive;
       }

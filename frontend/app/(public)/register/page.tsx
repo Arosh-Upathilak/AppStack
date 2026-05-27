@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { signIn } from "next-auth/react";
 import Icon from "@/components/Icon";
@@ -9,45 +9,14 @@ import { isValidEmailAddressFormat } from "@/lib/utils";
 import axios from "axios";
 import { toast } from "react-toastify";
 import { useRoleRedirect } from "@/hook/useRoleRedirect";
+import GoogleSignInButton from "@/components/GoogleSignInButton";
 
-function GoogleLogo() {
-  return (
-    <svg
-      width="18"
-      height="18"
-      viewBox="0 0 18 18"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-    >
-      <path
-        d="M17.64 9.205c0-.639-.057-1.252-.164-1.841H9v3.481h4.844a4.14 4.14 0 0 1-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615Z"
-        fill="#4285F4"
-      />
-      <path
-        d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18Z"
-        fill="#34A853"
-      />
-      <path
-        d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332Z"
-        fill="#FBBC05"
-      />
-      <path
-        d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58Z"
-        fill="#EA4335"
-      />
-    </svg>
-  );
-}
-
-type Step = "role" | "details" | "otp" | "pending-approval";
+type Step = "details" | "otp";
 
 export default function RegisterPage() {
   const router = useRouter();
-  const params = useSearchParams();
 
-  const [step, setStep] = useState<Step>("role");
-  const [role, setRole] = useState<"BUYER" | "SELLER" | null>(null);
-  const [googleBusy, setGoogleBusy] = useState(false);
+  const [step, setStep] = useState<Step>("details");
   const [formData, setFormData] = useState<SignUpProps>({
     firstName: "",
     lastName: "",
@@ -62,6 +31,7 @@ export default function RegisterPage() {
   const [resendOtpSending, setResendOtpSending] = useState(false);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
+  // If the user is already authenticated, send them to their dashboard.
   useRoleRedirect();
 
   const onChangeHandler = (name: keyof SignUpProps, value: string) => {
@@ -95,6 +65,15 @@ export default function RegisterPage() {
 
     try {
       setBusy(true);
+      // Always register as BUYER. Sellers self-enroll later from the buyer
+      // dashboard via /buyer/become-seller (REQ-11 — one identity, roles grow
+      // over time).
+      //
+      // TODO: stop sending `role` once Arosh's backend defaults to BUYER and
+      // stops accepting `role` from the request body (closes the
+      // privilege-escalation hole). Hardcoded "BUYER" here is safe in the
+      // meantime because there's no code path that lets a user choose a
+      // different value.
       const response = await axios.post(
         `${process.env.NEXT_PUBLIC_API_BASE_URL}/auth/createUser`,
         {
@@ -102,7 +81,7 @@ export default function RegisterPage() {
           firstName: formData.firstName,
           lastName: formData.lastName,
           password: formData.password,
-          role: role,
+          role: "BUYER",
         },
       );
       setVerifyToken(response.data.verifyToken);
@@ -134,6 +113,8 @@ export default function RegisterPage() {
       setCode("");
       setBusy(false);
       toast.success("OTP verification successful");
+
+      // Auto sign-in. Every new account is a BUYER — no role branching.
       const response = await signIn("credentials", {
         email: formData.email,
         password: formData.password,
@@ -197,6 +178,7 @@ export default function RegisterPage() {
   const resendOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      setResendOtpSending(true);
       await axios.post(
         `${process.env.NEXT_PUBLIC_API_BASE_URL}/auth/send-otp`,
         {
@@ -209,6 +191,8 @@ export default function RegisterPage() {
       const message = error.response?.data?.error || "OTP resend failed";
       setError(message);
       console.log(error);
+    } finally {
+      setResendOtpSending(false);
     }
   };
 
@@ -233,172 +217,12 @@ export default function RegisterPage() {
 
         <Steps current={step} />
 
-        {step === "role" && (
+        {step === "details" && (
           <>
             <h1 className="pub-auth-title">Create your account</h1>
             <p className="pub-auth-sub">
-              First, tell us what brings you to AppStack.
-            </p>
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: 10,
-                marginTop: 8,
-              }}
-            >
-              {[
-                {
-                  icon: "box",
-                  label: "Manage subscriptions",
-                  sub: "Buy and manage SaaS tools",
-                  value: "BUYER" as const,
-                },
-                {
-                  icon: "package",
-                  label: "Sell my SaaS",
-                  sub: "List products and collect payments",
-                  value: "SELLER" as const,
-                },
-              ].map((opt) => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => setRole(opt.value)}
-                  style={{
-                    padding: "16px 16px",
-                    border: `1.5px solid ${role === opt.value ? "var(--brand)" : "var(--line)"}`,
-                    borderRadius: 12,
-                    cursor: "pointer",
-                    background:
-                      role === opt.value ? "var(--brand-soft)" : "transparent",
-                    textAlign: "left",
-                  }}
-                >
-                  <div
-                    style={{
-                      width: 32,
-                      height: 32,
-                      borderRadius: 8,
-                      background: "var(--brand-soft)",
-                      color: "var(--brand)",
-                      display: "grid",
-                      placeItems: "center",
-                      marginBottom: 10,
-                    }}
-                  >
-                    <Icon
-                      name={opt.icon as Parameters<typeof Icon>[0]["name"]}
-                      size={16}
-                    />
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 13.5,
-                      fontWeight: 600,
-                      color: "var(--ink-1)",
-                    }}
-                  >
-                    {opt.label}
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 12,
-                      color: "var(--ink-4)",
-                      marginTop: 2,
-                    }}
-                  >
-                    {opt.sub}
-                  </div>
-                </button>
-              ))}
-            </div>
-
-            {role && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => setStep("details")}
-                  className="btn btn-primary"
-                  style={{
-                    width: "100%",
-                    height: 40,
-                    marginTop: 16,
-                    fontSize: 14,
-                  }}
-                >
-                  Continue with email <Icon name="arrow_right" size={13} />
-                </button>
-
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 10,
-                    margin: "14px 0",
-                  }}
-                >
-                  <div
-                    style={{ flex: 1, height: 1, background: "var(--line)" }}
-                  />
-                  <span style={{ fontSize: 12, color: "var(--ink-4)" }}>
-                    or
-                  </span>
-                  <div
-                    style={{ flex: 1, height: 1, background: "var(--line)" }}
-                  />
-                </div>
-
-                <button
-                  type="button"
-                  disabled={googleBusy}
-                  style={{
-                    width: "100%",
-                    height: 40,
-                    borderRadius: 8,
-                    border: "1.5px solid var(--line)",
-                    background: "var(--surface)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: 10,
-                    fontSize: 14,
-                    fontWeight: 500,
-                    cursor: googleBusy ? "not-allowed" : "pointer",
-                    opacity: googleBusy ? 0.6 : 1,
-                  }}
-                >
-                  <GoogleLogo />
-                  {googleBusy
-                    ? "Redirecting…"
-                    : `Continue as ${role === "BUYER" ? "Buyer" : "Seller"} with Google`}
-                </button>
-              </>
-            )}
-
-            {error && (
-              <div
-                style={{
-                  marginTop: 12,
-                  color: "var(--danger,#dc2626)",
-                  fontSize: 13,
-                }}
-              >
-                {error}
-              </div>
-            )}
-
-            <p className="pub-auth-switch">
-              Already have an account? <Link href="/login">Log in</Link>
-            </p>
-          </>
-        )}
-
-        {step === "details" && (
-          <>
-            <h1 className="pub-auth-title">Your details</h1>
-            <p className="pub-auth-sub">
-              Creating a {role === "SELLER" ? "seller" : "buyer"} account.
+              Start as a buyer — you can apply to sell from your dashboard once
+              you&apos;re signed in.
             </p>
             <form className="pub-auth-form" onSubmit={handleSignUp}>
               <div
@@ -486,32 +310,44 @@ export default function RegisterPage() {
                   {error}
                 </div>
               )}
-              <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
-                <button
-                  type="button"
-                  className="btn"
-                  onClick={() => setStep("role")}
-                  style={{ height: 40 }}
-                >
-                  Back
-                </button>
-                <button
-                  type="submit"
-                  className="btn btn-primary"
-                  disabled={busy}
-                  style={{ flex: 1, height: 40 }}
-                >
-                  {busy ? (
-                    "Sending code…"
-                  ) : (
-                    <>
-                      Send verification code{" "}
-                      <Icon name="arrow_right" size={13} />
-                    </>
-                  )}
-                </button>
-              </div>
+              <button
+                type="submit"
+                className="btn btn-primary"
+                disabled={busy}
+                style={{ width: "100%", height: 40, marginTop: 16 }}
+              >
+                {busy ? (
+                  "Sending code…"
+                ) : (
+                  <>
+                    Send verification code{" "}
+                    <Icon name="arrow_right" size={13} />
+                  </>
+                )}
+              </button>
             </form>
+
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                margin: "20px 0 14px",
+              }}
+            >
+              <div style={{ flex: 1, height: 1, background: "var(--line)" }} />
+              <span style={{ fontSize: 12, color: "var(--ink-4)" }}>or</span>
+              <div style={{ flex: 1, height: 1, background: "var(--line)" }} />
+            </div>
+
+            <GoogleSignInButton
+              callbackUrl="/buyer"
+              label="Sign up with Google"
+            />
+
+            <p className="pub-auth-switch">
+              Already have an account? <Link href="/login">Log in</Link>
+            </p>
           </>
         )}
 
@@ -584,32 +420,14 @@ export default function RegisterPage() {
             </form>
           </>
         )}
-
-        {step === "pending-approval" && (
-          <>
-            <h1 className="pub-auth-title">Awaiting approval</h1>
-            <p className="pub-auth-sub">
-              Thanks — your seller account has been created. An administrator
-              will review it shortly. We&apos;ll email you when it&apos;s
-              approved so you can sign in.
-            </p>
-            <Link
-              href="/"
-              className="btn btn-primary"
-              style={{ width: "100%", height: 40, marginTop: 8 }}
-            >
-              Back to home
-            </Link>
-          </>
-        )}
       </div>
     </div>
   );
 }
 
 function Steps({ current }: { current: Step }) {
-  const order: Step[] = ["role", "details", "otp"];
-  const idx = current === "pending-approval" ? 2 : order.indexOf(current);
+  const order: Step[] = ["details", "otp"];
+  const idx = order.indexOf(current);
   return (
     <div
       style={{

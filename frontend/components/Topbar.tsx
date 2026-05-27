@@ -2,6 +2,7 @@
 
 import React from 'react';
 import Icon from './Icon';
+import RoleSwitcher from './RoleSwitcher';
 
 interface TopbarProps {
   crumbs: string[];
@@ -23,6 +24,7 @@ export default function Topbar({ crumbs }: TopbarProps) {
         <input placeholder="Search subscriptions, products, invoices…" />
         <span className="tb-kbd">⌘ K</span>
       </div>
+      <RoleSwitcher />
       <button className="tb-icon-btn" title="Notifications">
         <Icon name="bell" size={16} />
         <span className="notif-dot" />
