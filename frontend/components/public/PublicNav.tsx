@@ -38,7 +38,7 @@ export default function PublicNav() {
         <div className="psite-nav-cta">
           {!session ? (
             <div>
-              <Link href="/login" className="ps-login">
+              <Link href="/login" className="ps-login ">
                 Log in
               </Link>
               <Link href="/register" className="ps-btn ps-btn-primary">

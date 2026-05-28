@@ -14,18 +14,6 @@ export default function Hero() {
       <div className="ps-grid-bg"/>
 
       <div className="psite-wrap psite-hero-inner">
-        {/* Eyebrow */}
-        <span className="ps-eyebrow">
-          <span className="ic">
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-            </svg>
-          </span>
-          GDPR-compliant
-          <span className="sep"/>
-          Cloudflare-proxied &amp; reCAPTCHA-protected
-        </span>
-
         {/* Headline */}
         <h1 className="ps-headline">
           <span className="line"><span>All your SaaS subscriptions,</span></span>

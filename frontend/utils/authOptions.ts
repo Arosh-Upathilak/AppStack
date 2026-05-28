@@ -2,7 +2,6 @@ import axios from "axios";
 import { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import GoogleProvider from "next-auth/providers/google";
-import type { AppRole, SellerStatus } from "@/types/next-auth";
 
 const MAX_SESSION_AGE = 30 * 24 * 60 * 60; // 30 days
 const INACTIVE_TIMEOUT = 7 * 24 * 60 * 60; // 7 days
