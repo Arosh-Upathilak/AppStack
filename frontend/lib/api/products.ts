@@ -1,7 +1,48 @@
+import axios from 'axios';
 import { PRODUCTS, CATEGORIES } from '@/data/mock';
 import { delay } from './client';
+import { withMockFallback } from './demo';
 import type { Product } from './types';
 import type { Review } from './types';
+
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL;
+
+export interface NewProductInput {
+  name: string;
+  tagline: string;
+  category: string;
+  from: number;
+  description?: string;
+}
+
+/**
+ * Create a product. Hits the (Arosh-owned) POST /products endpoint, falling back
+ * to a synthesized product object so the "add product" demo works regardless of
+ * backend readiness.
+ */
+export async function createProduct(input: NewProductInput) {
+  return withMockFallback(
+    async () => {
+      const res = await axios.post(`${API_BASE}/products`, input, {
+        withCredentials: true,
+      });
+      return (res.data?.product ?? res.data) as Product;
+    },
+    () => ({
+      id: input.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+      name: input.name,
+      vendor: 'Your business',
+      hue: '#003d9b',
+      category: input.category,
+      tagline: input.tagline,
+      rating: 0,
+      reviews: 0,
+      from: input.from,
+      integrations: [],
+    }) as Product,
+    'POST /products',
+  );
+}
 
 const MOCK_REVIEWS: Review[] = [
   { id: 'r1', productId: 'cloudsync-pro', author: 'Sarah Jenkins', role: 'VP of Sales · TechCorp', rating: 5, body: 'Transformed our sales pipeline visibility. The unified dashboard gives our exec team exactly what they need without digging through reports.', createdAt: '2024-10-01' },

@@ -3,9 +3,9 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import axios from "axios";
 import { toast } from "react-toastify";
 import Icon from "@/components/Icon";
+import { submitSellerApplication } from "@/lib/api/sellers";
 
 export default function BecomeSellerPage() {
   const router = useRouter();
@@ -34,25 +34,22 @@ export default function BecomeSellerPage() {
     setBusy(true);
     setError(null);
     try {
-      await axios.post(
-        `${process.env.NEXT_PUBLIC_API_BASE_URL}/auth/become-seller`,
-        {
-          businessName: businessName.trim(),
-          payoutEmail: payoutEmail.trim().toLowerCase(),
-          webhookUrl: webhookUrl.trim(),
-          description: description.trim(),
-        },
-        { withCredentials: true },
-      );
+      const { mocked } = await submitSellerApplication({
+        businessName: businessName.trim(),
+        payoutEmail: payoutEmail.trim().toLowerCase(),
+        webhookUrl: webhookUrl.trim(),
+        description: description.trim(),
+      });
       setSubmitted(true);
-      toast.success("Application submitted — we'll email you once reviewed.");
-    } catch (err: any) {
-      // Backend `/auth/become-seller` may not exist yet — surface a friendly
-      // error so we can keep working against the planned contract.
+      toast.success(
+        mocked
+          ? "Application submitted (demo)."
+          : "Application submitted — we'll email you once reviewed.",
+      );
+    } catch (err) {
+      const axiosError = err as any;
       const message =
-        err?.response?.data?.error ||
-        err?.message ||
-        "Could not submit application. Please try again.";
+        axiosError?.message || "Could not submit application. Please try again.";
       setError(message);
       toast.error(message);
     } finally {
@@ -60,57 +57,28 @@ export default function BecomeSellerPage() {
     }
   }
 
+  const inputCls =
+    "h-10 w-full rounded-md border border-line bg-surface px-3 text-sm text-ink-1 outline-none transition-colors placeholder:text-ink-5 focus:border-brand";
+  const labelCls = "text-[13px] font-medium text-ink-2";
+  const hintCls = "mt-1 mb-1.5 text-xs text-ink-4";
+
   if (submitted) {
     return (
       <div className="page screen-enter">
-        <div
-          style={{
-            maxWidth: 520,
-            margin: "60px auto",
-            textAlign: "center",
-          }}
-        >
-          <div
-            style={{
-              width: 56,
-              height: 56,
-              borderRadius: 16,
-              background: "var(--brand-soft)",
-              color: "var(--brand)",
-              display: "grid",
-              placeItems: "center",
-              margin: "0 auto 20px",
-            }}
-          >
+        <div className="mx-auto mt-16 max-w-lg text-center">
+          <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-xl bg-brand-soft text-brand">
             <Icon name="check" size={28} />
           </div>
-          <h1
-            style={{
-              fontSize: 24,
-              fontWeight: 700,
-              color: "var(--ink-1)",
-              margin: 0,
-            }}
-          >
-            Application submitted
-          </h1>
-          <p
-            style={{
-              fontSize: 14,
-              color: "var(--ink-4)",
-              marginTop: 10,
-              lineHeight: 1.6,
-            }}
-          >
+          <h1 className="text-2xl font-bold text-ink-1">Application submitted</h1>
+          <p className="mt-2.5 text-sm leading-relaxed text-ink-4">
             Thanks — an administrator will review your seller application
-            shortly. We&apos;ll email you the moment it&apos;s approved (or if
-            we need more info). You can keep using AppStack as a buyer in the
+            shortly. We&apos;ll email you the moment it&apos;s approved (or if we
+            need more info). You can keep using AppStack as a buyer in the
             meantime.
           </p>
           <button
-            className="btn btn-primary"
-            style={{ height: 40, marginTop: 24, minWidth: 200 }}
             onClick={() => router.push("/buyer")}
+            className="mt-6 inline-flex h-10 min-w-[200px] items-center justify-center rounded-md bg-brand px-5 text-sm font-semibold text-white transition-colors hover:bg-brand-hover"
           >
             Back to buyer dashboard
           </button>
@@ -121,41 +89,15 @@ export default function BecomeSellerPage() {
 
   return (
     <div className="page screen-enter">
-      <div style={{ maxWidth: 720, margin: "40px auto" }}>
-        <div style={{ marginBottom: 28 }}>
-          <div
-            style={{
-              width: 44,
-              height: 44,
-              borderRadius: 12,
-              background: "var(--brand-soft)",
-              color: "var(--brand)",
-              display: "grid",
-              placeItems: "center",
-              marginBottom: 16,
-            }}
-          >
+      <div className="mx-auto my-10 max-w-2xl">
+        <div className="mb-7">
+          <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-brand-soft text-brand">
             <Icon name="package" size={22} />
           </div>
-          <h1
-            style={{
-              fontSize: 26,
-              fontWeight: 700,
-              color: "var(--ink-1)",
-              margin: 0,
-              letterSpacing: "-0.01em",
-            }}
-          >
+          <h1 className="text-[26px] font-bold tracking-tight text-ink-1">
             Sell your SaaS on AppStack
           </h1>
-          <p
-            style={{
-              fontSize: 14.5,
-              color: "var(--ink-4)",
-              marginTop: 8,
-              lineHeight: 1.6,
-            }}
-          >
+          <p className="mt-2 text-[14.5px] leading-relaxed text-ink-4">
             Reach buyers actively managing their stack. We handle payments,
             invoicing, and refunds — your platform integrates over a single
             webhook. Submit your details below and an admin will review your
@@ -163,14 +105,11 @@ export default function BecomeSellerPage() {
           </p>
         </div>
 
-        <form
-          onSubmit={submit}
-          style={{ display: "flex", flexDirection: "column", gap: 18 }}
-        >
-          <div>
-            <label className="field-label">Business name</label>
+        <form onSubmit={submit} className="flex flex-col gap-[18px]">
+          <div className="flex flex-col">
+            <label className={labelCls}>Business name</label>
             <input
-              className="input"
+              className={`${inputCls} mt-1.5`}
               value={businessName}
               onChange={(e) => setBusinessName(e.target.value)}
               required
@@ -179,20 +118,14 @@ export default function BecomeSellerPage() {
             />
           </div>
 
-          <div>
-            <label className="field-label">Payout email</label>
-            <p
-              style={{
-                fontSize: 12,
-                color: "var(--ink-4)",
-                margin: "2px 0 6px",
-              }}
-            >
+          <div className="flex flex-col">
+            <label className={labelCls}>Payout email</label>
+            <p className={hintCls}>
               Where you&apos;ll receive payout notifications and invoices.
             </p>
             <input
               type="email"
-              className="input"
+              className={inputCls}
               value={payoutEmail}
               onChange={(e) => setPayoutEmail(e.target.value)}
               required
@@ -201,21 +134,15 @@ export default function BecomeSellerPage() {
             />
           </div>
 
-          <div>
-            <label className="field-label">Webhook URL</label>
-            <p
-              style={{
-                fontSize: 12,
-                color: "var(--ink-4)",
-                margin: "2px 0 6px",
-              }}
-            >
+          <div className="flex flex-col">
+            <label className={labelCls}>Webhook URL</label>
+            <p className={hintCls}>
               We&apos;ll POST subscription events here so your platform can
-              activate, change, or cancel plans automatically. (REQ-43)
+              activate, change, or cancel plans automatically.
             </p>
             <input
               type="url"
-              className="input"
+              className={inputCls}
               value={webhookUrl}
               onChange={(e) => setWebhookUrl(e.target.value)}
               required
@@ -223,63 +150,40 @@ export default function BecomeSellerPage() {
             />
           </div>
 
-          <div>
-            <label className="field-label">About your product</label>
-            <p
-              style={{
-                fontSize: 12,
-                color: "var(--ink-4)",
-                margin: "2px 0 6px",
-              }}
-            >
+          <div className="flex flex-col">
+            <label className={labelCls}>About your product</label>
+            <p className={hintCls}>
               A short description to help the reviewer understand what
               you&apos;ll be listing.
             </p>
             <textarea
-              className="input"
+              className="min-h-[96px] w-full resize-y rounded-md border border-line bg-surface px-3 py-2.5 text-sm text-ink-1 outline-none transition-colors placeholder:text-ink-5 focus:border-brand"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               required
               placeholder="We sell a project-management SaaS for engineering teams…"
               rows={4}
-              style={{ resize: "vertical", minHeight: 96 }}
             />
           </div>
 
           {error && (
-            <div
-              style={{
-                color: "var(--danger,#dc2626)",
-                fontSize: 13,
-                lineHeight: 1.5,
-              }}
-            >
-              {error}
-            </div>
+            <div className="text-[13px] leading-relaxed text-danger">{error}</div>
           )}
 
-          <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
+          <div className="mt-1 flex gap-2.5">
             <button
               type="button"
-              className="btn"
               onClick={() => router.push("/buyer")}
-              style={{ height: 42 }}
+              className="h-[42px] rounded-md border border-line bg-surface px-5 text-sm font-medium text-ink-2 transition-colors hover:bg-surface-hover"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="btn btn-primary"
               disabled={busy}
-              style={{ flex: 1, height: 42, fontSize: 14 }}
+              className="inline-flex h-[42px] flex-1 items-center justify-center gap-2 rounded-md bg-brand px-5 text-sm font-semibold text-white transition-colors hover:bg-brand-hover disabled:opacity-60"
             >
-              {busy ? (
-                "Submitting…"
-              ) : (
-                <>
-                  Submit for review <Icon name="arrow_right" size={13} />
-                </>
-              )}
+              {busy ? "Submitting…" : (<>Submit for review <Icon name="arrow_right" size={13} /></>)}
             </button>
           </div>
         </form>

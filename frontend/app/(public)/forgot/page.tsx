@@ -6,18 +6,20 @@ import Icon from "@/components/Icon";
 import { toast } from "react-toastify";
 import { isValidEmailAddressFormat } from "@/lib/utils";
 import axios from "axios";
+import { getRecaptchaToken } from "@/lib/recaptcha";
+import { retryOnTransient } from "@/lib/retry";
 
 export default function ForgotPage() {
   const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  
 
   const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       setBusy(true);
+      setError(null);
       if (!email) {
         setError("Email required");
         return;
@@ -28,16 +30,22 @@ export default function ForgotPage() {
         return;
       }
 
-      await axios.post(
-        `${process.env.NEXT_PUBLIC_API_BASE_URL}/auth/forgot-password`,
-        {
-          email: email,
-        },
+      const token = await getRecaptchaToken("forgot_password");
+
+      await retryOnTransient(() =>
+        axios.post(
+          `${process.env.NEXT_PUBLIC_API_BASE_URL}/auth/forgot-password`,
+          {
+            email: email,
+            token,
+          },
+        ),
       );
       toast.success("Forgot email send successful");
       setDone(true);
-    } catch (error: any) {
-      const message = error.response?.data?.error || "Forgot email sent failed";
+    } catch (error) {
+      const axiosError = error as any;
+      const message = axiosError.response?.data?.error || "Forgot email sent failed";
 
       setError(message);
       toast.error(message);

@@ -10,6 +10,8 @@ import axios from "axios";
 import { toast } from "react-toastify";
 import { useRoleRedirect } from "@/hook/useRoleRedirect";
 import GoogleSignInButton from "@/components/GoogleSignInButton";
+import { getRecaptchaToken } from "@/lib/recaptcha";
+import { retryOnTransient } from "@/lib/retry";
 
 type Step = "details" | "otp";
 
@@ -74,23 +76,28 @@ export default function RegisterPage() {
       // privilege-escalation hole). Hardcoded "BUYER" here is safe in the
       // meantime because there's no code path that lets a user choose a
       // different value.
-      const response = await axios.post(
-        `${process.env.NEXT_PUBLIC_API_BASE_URL}/auth/createUser`,
-        {
-          email: formData.email,
-          firstName: formData.firstName,
-          lastName: formData.lastName,
-          password: formData.password,
-          role: "BUYER",
-        },
+      const token = await getRecaptchaToken("create_account");
+      const response = await retryOnTransient(() =>
+        axios.post(
+          `${process.env.NEXT_PUBLIC_API_BASE_URL}/auth/createUser`,
+          {
+            email: formData.email,
+            firstName: formData.firstName,
+            lastName: formData.lastName,
+            password: formData.password,
+            role: "BUYER",
+            token,
+          },
+        ),
       );
       setVerifyToken(response.data.verifyToken);
       setError("");
       setBusy(false);
       toast.success("OTP sent successful");
       setStep("otp");
-    } catch (error: any) {
-      const message = error.response?.data?.error || "OTP sent failed";
+    } catch (error) {
+      const axiosError = error as any;
+      const message = axiosError.response?.data?.error || "OTP sent failed";
 
       setError(message);
       toast.error(message);
@@ -104,11 +111,13 @@ export default function RegisterPage() {
     e.preventDefault();
     try {
       setBusy(true);
-      await axios.post(
-        `${process.env.NEXT_PUBLIC_API_BASE_URL}/auth/verify-otp/${verifyToken}`,
-        {
-          otp: code,
-        },
+      await retryOnTransient(() =>
+        axios.post(
+          `${process.env.NEXT_PUBLIC_API_BASE_URL}/auth/verify-otp/${verifyToken}`,
+          {
+            otp: code,
+          },
+        ),
       );
       setCode("");
       setBusy(false);
@@ -134,8 +143,9 @@ export default function RegisterPage() {
         setError("");
         toast.success("Successful create account");
       }
-    } catch (error: any) {
-      const message = error.response?.data?.error || "OTP verification failed";
+    } catch (error) {
+      const axiosError = error as any;
+      const message = axiosError.response?.data?.error || "OTP verification failed";
 
       setError(message);
       toast.error(message);
@@ -179,16 +189,19 @@ export default function RegisterPage() {
     e.preventDefault();
     try {
       setResendOtpSending(true);
-      await axios.post(
-        `${process.env.NEXT_PUBLIC_API_BASE_URL}/auth/send-otp`,
-        {
-          email: formData.email,
-        },
+      await retryOnTransient(() =>
+        axios.post(
+          `${process.env.NEXT_PUBLIC_API_BASE_URL}/auth/send-otp`,
+          {
+            email: formData.email,
+          },
+        ),
       );
       toast.success("Resend OTP successful");
       startTimer();
-    } catch (error: any) {
-      const message = error.response?.data?.error || "OTP resend failed";
+    } catch (error) {
+      const axiosError = error as any;
+      const message = axiosError.response?.data?.error || "OTP resend failed";
       setError(message);
       console.log(error);
     } finally {
@@ -341,7 +354,7 @@ export default function RegisterPage() {
             </div>
 
             <GoogleSignInButton
-              callbackUrl="/buyer"
+              callbackUrl="/"
               label="Sign up with Google"
             />
 

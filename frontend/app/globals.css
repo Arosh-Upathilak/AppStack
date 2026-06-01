@@ -1,3 +1,25 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Preflight is disabled so it doesn't fight the legacy design system, but the
+   new Tailwind components need bare <button>/<select> to lose their native
+   grey UA background. Legacy .btn / .ps-btn rules have higher specificity, so
+   they're unaffected by this element-level reset. */
+@layer base {
+  button {
+    background-color: transparent;
+    background-image: none;
+    border-width: 0;
+    border-style: solid; /* so Tailwind `border` utilities still render */
+    font-family: inherit;
+    color: inherit;
+  }
+  button:not(:disabled) {
+    cursor: pointer;
+  }
+}
+
 /* ──────────────────────────────────────────────────────────────
    AppStack — design tokens + base styles
    ────────────────────────────────────────────────────────────── */

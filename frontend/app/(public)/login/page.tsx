@@ -8,6 +8,7 @@ import { isValidEmailAddressFormat } from "@/lib/utils";
 import { toast } from "react-toastify";
 import { useRoleRedirect } from "@/hook/useRoleRedirect";
 import GoogleSignInButton from "@/components/GoogleSignInButton";
+import { getRecaptchaToken } from "@/lib/recaptcha";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -48,10 +49,12 @@ export default function LoginPage() {
     }
 
     setLoading(true);
+    const token = await getRecaptchaToken("login");
     const response = await signIn("credentials", {
       redirect: false,
       email: formData.email,
       password: formData.password,
+      token,
     });
     setLoading(false);
 
@@ -163,7 +166,7 @@ export default function LoginPage() {
           <div style={{ flex: 1, height: 1, background: "var(--line)" }} />
         </div>
 
-        <GoogleSignInButton callbackUrl="/buyer" label="Log in with Google" />
+        <GoogleSignInButton callbackUrl="/" label="Log in with Google" />
 
         <p className="pub-auth-switch">
           Don&apos;t have an account?{" "}

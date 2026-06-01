@@ -2,6 +2,7 @@ import axios from "axios";
 import { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import GoogleProvider from "next-auth/providers/google";
+import { retryOnTransient } from "@/lib/retry";
 
 const MAX_SESSION_AGE = 30 * 24 * 60 * 60; // 30 days
 const INACTIVE_TIMEOUT = 7 * 24 * 60 * 60; // 7 days
@@ -15,6 +16,7 @@ export const authOptions: NextAuthOptions = {
       credentials: {
         email: { label: "Email", type: "text" },
         password: { label: "Password", type: "password" },
+        token: { label: "reCAPTCHA token", type: "text" },
       },
 
       async authorize(credentials: any) {
@@ -23,12 +25,15 @@ export const authOptions: NextAuthOptions = {
             return null;
           }
 
-          const response = await axios.post(
-            `${process.env.NEXT_PUBLIC_API_BASE_URL}/auth/loginUser`,
-            {
-              email: credentials.email,
-              password: credentials.password,
-            },
+          const response = await retryOnTransient(() =>
+            axios.post(
+              `${process.env.NEXT_PUBLIC_API_BASE_URL}/auth/loginUser`,
+              {
+                email: credentials.email,
+                password: credentials.password,
+                token: credentials.token,
+              },
+            ),
           );
 
           const user = response.data.user;
@@ -66,14 +71,16 @@ export const authOptions: NextAuthOptions = {
       if (account?.provider !== "google") return true;
 
       try {
-        const res = await axios.post(
-          `${process.env.NEXT_PUBLIC_API_BASE_URL}/auth/google-login`,
-          {
-            email: user.email,
-            name: user.name,
-            image: user.image,
-            providerAccountId: account.providerAccountId,
-          },
+        const res = await retryOnTransient(() =>
+          axios.post(
+            `${process.env.NEXT_PUBLIC_API_BASE_URL}/auth/google-login`,
+            {
+              email: user.email,
+              name: user.name,
+              image: user.image,
+              providerAccountId: account.providerAccountId,
+            },
+          ),
         );
         const backendUser = res.data?.user;
         if (backendUser) {

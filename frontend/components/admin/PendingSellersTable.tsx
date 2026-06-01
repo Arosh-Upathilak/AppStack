@@ -1,91 +1,66 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import axios from "axios";
 import { toast } from "react-toastify";
 import Icon from "@/components/Icon";
-
-export interface PendingSeller {
-  id: string;
-  firstName: string;
-  lastName: string;
-  email: string;
-  businessName?: string | null;
-  appliedAt?: string | null;
-}
+import {
+  approveSeller,
+  listPendingSellers,
+  rejectSeller,
+  type PendingSeller,
+} from "@/lib/api/sellers";
 
 interface Props {
   /** Optional callback when the queue size changes (e.g. for the dashboard card). */
   onCountChange?: (count: number) => void;
 }
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL;
-
 function formatDate(iso: string | null | undefined): string {
   if (!iso) return "—";
-  try {
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return iso;
-    return d.toLocaleString(undefined, {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  } catch {
-    return iso;
-  }
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 export default function PendingSellersTable({ onCountChange }: Props) {
   const [items, setItems] = useState<PendingSeller[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [mocked, setMocked] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [rejectReason, setRejectReason] = useState("");
 
-  const fetchPending = useCallback(async () => {
-    setError(null);
-    try {
-      const res = await axios.get(`${API_BASE}/admin/sellers/pending`, {
-        withCredentials: true,
-      });
-      const list: PendingSeller[] = res.data?.items ?? [];
-      setItems(list);
-      onCountChange?.(list.length);
-    } catch (err: any) {
-      const message =
-        err?.response?.data?.error ||
-        err?.message ||
-        "Failed to load pending sellers.";
-      setError(message);
-      setItems([]);
-      onCountChange?.(0);
-    }
+  const refresh = useCallback(async () => {
+    const { data, mocked } = await listPendingSellers();
+    setItems(data);
+    setMocked(mocked);
+    onCountChange?.(data.length);
   }, [onCountChange]);
 
   useEffect(() => {
-    fetchPending();
-  }, [fetchPending]);
+    refresh();
+  }, [refresh]);
+
+  function dropRow(id: string) {
+    setItems((curr) => {
+      const next = (curr ?? []).filter((x) => x.id !== id);
+      onCountChange?.(next.length);
+      return next;
+    });
+  }
 
   async function approve(id: string) {
     setBusyId(id);
     try {
-      await axios.post(
-        `${API_BASE}/admin/sellers/${id}/approve`,
-        {},
-        { withCredentials: true },
-      );
-      setItems((curr) => (curr ?? []).filter((x) => x.id !== id));
-      onCountChange?.((items ?? []).filter((x) => x.id !== id).length);
+      await approveSeller(id);
+      dropRow(id);
       toast.success("Seller approved.");
     } catch (err: any) {
-      const message =
-        err?.response?.data?.error ||
-        err?.message ||
-        "Could not approve seller.";
-      toast.error(message);
+      toast.error(err?.message || "Could not approve seller.");
     } finally {
       setBusyId(null);
     }
@@ -94,22 +69,13 @@ export default function PendingSellersTable({ onCountChange }: Props) {
   async function confirmReject(id: string) {
     setBusyId(id);
     try {
-      await axios.post(
-        `${API_BASE}/admin/sellers/${id}/reject`,
-        { reason: rejectReason.trim() || null },
-        { withCredentials: true },
-      );
-      setItems((curr) => (curr ?? []).filter((x) => x.id !== id));
-      onCountChange?.((items ?? []).filter((x) => x.id !== id).length);
+      await rejectSeller(id, rejectReason.trim() || null);
+      dropRow(id);
       toast.success("Seller rejected.");
       setRejectingId(null);
       setRejectReason("");
     } catch (err: any) {
-      const message =
-        err?.response?.data?.error ||
-        err?.message ||
-        "Could not reject seller.";
-      toast.error(message);
+      toast.error(err?.message || "Could not reject seller.");
     } finally {
       setBusyId(null);
     }
@@ -117,157 +83,99 @@ export default function PendingSellersTable({ onCountChange }: Props) {
 
   if (items === null) {
     return (
-      <div
-        className="card card-pad"
-        style={{ color: "var(--ink-4)", fontSize: 13 }}
-      >
+      <div className="rounded-lg border border-line bg-surface p-5 text-sm text-ink-4">
         Loading pending applications…
-      </div>
-    );
-  }
-
-  if (error && items.length === 0) {
-    return (
-      <div
-        className="card card-pad"
-        style={{
-          color: "var(--ink-3)",
-          fontSize: 13.5,
-          lineHeight: 1.6,
-        }}
-      >
-        <div
-          style={{
-            color: "var(--danger,#dc2626)",
-            fontWeight: 600,
-            marginBottom: 6,
-          }}
-        >
-          Couldn&apos;t load pending sellers
-        </div>
-        <div style={{ marginBottom: 12 }}>{error}</div>
-        <button
-          type="button"
-          className="btn btn-secondary"
-          onClick={fetchPending}
-          style={{ height: 36 }}
-        >
-          <Icon name="refresh" size={13} /> Try again
-        </button>
       </div>
     );
   }
 
   if (items.length === 0) {
     return (
-      <div
-        className="card card-pad"
-        style={{
-          textAlign: "center",
-          color: "var(--ink-4)",
-          fontSize: 14,
-          padding: "48px 24px",
-        }}
-      >
-        <div
-          style={{
-            fontSize: 32,
-            marginBottom: 8,
-            opacity: 0.6,
-          }}
-        >
-          ✓
-        </div>
+      <div className="rounded-lg border border-line bg-surface px-6 py-12 text-center text-sm text-ink-4">
+        <div className="mb-2 text-3xl opacity-60">✓</div>
         No pending seller applications.
       </div>
     );
   }
 
   return (
-    <div className="card">
-      <table className="tbl">
+    <div className="overflow-hidden rounded-lg border border-line bg-surface">
+      {mocked && (
+        <div className="border-b border-line bg-warning-soft px-4 py-2 text-xs font-medium text-warning">
+          Showing demo data — admin endpoints not reachable.
+        </div>
+      )}
+      <table className="w-full border-collapse text-sm">
         <thead>
-          <tr>
-            <th>Name</th>
-            <th>Email</th>
-            <th>Business</th>
-            <th>Applied</th>
-            <th className="col-action" />
+          <tr className="border-b border-line text-left text-xs font-semibold uppercase tracking-wide text-ink-4">
+            <th className="px-4 py-3">Name</th>
+            <th className="px-4 py-3">Email</th>
+            <th className="px-4 py-3">Business</th>
+            <th className="px-4 py-3">Applied</th>
+            <th className="px-4 py-3" />
           </tr>
         </thead>
         <tbody>
           {items.map((s) => {
             const isRejecting = rejectingId === s.id;
+            const busy = busyId === s.id;
             return (
-              <tr key={s.id}>
-                <td style={{ color: "var(--ink-1)", fontWeight: 500 }}>
+              <tr key={s.id} className="border-b border-line-soft last:border-0">
+                <td className="px-4 py-3 font-medium text-ink-1">
                   {s.firstName} {s.lastName}
                 </td>
-                <td className="muted">{s.email}</td>
-                <td>{s.businessName ?? "—"}</td>
-                <td className="muted">{formatDate(s.appliedAt)}</td>
-                <td className="col-action">
+                <td className="px-4 py-3 text-ink-4">{s.email}</td>
+                <td className="px-4 py-3 text-ink-2">{s.businessName ?? "—"}</td>
+                <td className="px-4 py-3 text-ink-4">{formatDate(s.appliedAt)}</td>
+                <td className="px-4 py-3">
                   {isRejecting ? (
-                    <div
-                      style={{
-                        display: "flex",
-                        gap: 6,
-                        alignItems: "center",
-                      }}
-                    >
+                    <div className="flex items-center justify-end gap-2">
                       <input
-                        className="input"
                         value={rejectReason}
                         onChange={(e) => setRejectReason(e.target.value)}
                         placeholder="Reason (optional)"
-                        style={{ height: 32, fontSize: 12, minWidth: 180 }}
                         autoFocus
+                        className="h-8 min-w-[180px] rounded-md border border-line bg-surface px-2.5 text-xs text-ink-1 outline-none focus:border-brand"
                       />
                       <button
-                        className="btn btn-ghost btn-sm"
                         type="button"
                         onClick={() => {
                           setRejectingId(null);
                           setRejectReason("");
                         }}
+                        className="rounded-md px-2.5 py-1.5 text-xs font-medium text-ink-3 hover:bg-surface-hover"
                       >
                         Cancel
                       </button>
                       <button
-                        className="btn btn-primary btn-sm"
                         type="button"
-                        disabled={busyId === s.id}
+                        disabled={busy}
                         onClick={() => confirmReject(s.id)}
+                        className="rounded-md bg-danger px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
                       >
-                        {busyId === s.id ? "…" : "Confirm reject"}
+                        {busy ? "…" : "Confirm reject"}
                       </button>
                     </div>
                   ) : (
-                    <div
-                      style={{
-                        display: "flex",
-                        gap: 6,
-                        justifyContent: "flex-end",
-                      }}
-                    >
+                    <div className="flex items-center justify-end gap-2">
                       <button
-                        className="btn btn-ghost btn-sm"
                         type="button"
-                        disabled={busyId === s.id}
+                        disabled={busy}
                         onClick={() => {
                           setRejectingId(s.id);
                           setRejectReason("");
                         }}
+                        className="rounded-md px-3 py-1.5 text-xs font-medium text-ink-2 hover:bg-surface-hover disabled:opacity-60"
                       >
                         Reject
                       </button>
                       <button
-                        className="btn btn-primary btn-sm"
                         type="button"
-                        disabled={busyId === s.id}
+                        disabled={busy}
                         onClick={() => approve(s.id)}
+                        className="inline-flex items-center gap-1.5 rounded-md bg-brand px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-hover disabled:opacity-60"
                       >
-                        {busyId === s.id ? "…" : "Approve"}
+                        {busy ? "…" : (<><Icon name="check" size={13} /> Approve</>)}
                       </button>
                     </div>
                   )}

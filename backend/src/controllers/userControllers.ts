@@ -9,7 +9,7 @@ import { otpTemplate } from "../template/otpEmail";
 import { redisClient } from "../config/redis";
 import { resetPasswordTemplate } from "../template/resetPasswordEmail";
 import { createAccountTemplate } from "../template/createAccount";
-import axios from "axios";
+import { verifyRecaptcha } from "../utils/recaptcha";
 
 // OTP Expire time set
 const OTP_EXPIRY = 300;
@@ -59,33 +59,7 @@ const createUser = asyncHandler(async (req: Request, res: Response) => {
   }
 
   // Verify reCAPTCHA
-  const recaptchaResponse = await axios.post(
-    "https://www.google.com/recaptcha/api/siteverify",
-    null,
-    {
-      params: {
-        secret: process.env.RECAPTCHA_SECRET_KEY,
-        response: token,
-      },
-    },
-  );
-
-  // reCAPTCHA data
-  const recaptchaData = recaptchaResponse.data;
-
-  if (recaptchaData.action !== "create_account") {
-    throw new AppError("Invalid reCAPTCHA action", 400);
-  }
-
-  // Protection
-  if (!recaptchaData.success) {
-    throw new AppError("reCAPTCHA verification failed", 400);
-  }
-
-  // Score protection
-  if (recaptchaData.score < 0.5) {
-    throw new AppError("Bot activity detected", 400);
-  }
+  await verifyRecaptcha(token, "create_account");
 
   // Check Existing User
   const existsUser = await prisma.user.findFirst({
@@ -163,29 +137,7 @@ const loginUser = asyncHandler(async (req: Request, res: Response) => {
   }
 
   // Verify reCAPTCHA
-  const recaptchaResponse = await axios.post(
-    "https://www.google.com/recaptcha/api/siteverify",
-    null,
-    {
-      params: {
-        secret: process.env.RECAPTCHA_SECRET_KEY,
-        response: token,
-      },
-    },
-  );
-
-  // reCAPTCHA data
-  const recaptchaData = recaptchaResponse.data;
-
-  // Protection
-  if (!recaptchaData.success) {
-    throw new AppError("reCAPTCHA verification failed", 400);
-  }
-
-  // Score protection
-  if (recaptchaData.score < 0.5) {
-    throw new AppError("Bot activity detected", 400);
-  }
+  await verifyRecaptcha(token);
 
   // Check User
   const existsUser = await prisma.user.findFirst({
@@ -330,33 +282,7 @@ const forgotPasswordSendEmail = asyncHandler(
     }
 
     // Verify reCAPTCHA
-    const recaptchaResponse = await axios.post(
-      "https://www.google.com/recaptcha/api/siteverify",
-      null,
-      {
-        params: {
-          secret: process.env.RECAPTCHA_SECRET_KEY,
-          response: token,
-        },
-      },
-    );
-
-    // reCAPTCHA data
-    const recaptchaData = recaptchaResponse.data;
-
-    if (recaptchaData.action !== "forgot_password") {
-      throw new AppError("Invalid reCAPTCHA action", 400);
-    }
-
-    // Protection
-    if (!recaptchaData.success) {
-      throw new AppError("reCAPTCHA verification failed", 400);
-    }
-
-    // Score protection
-    if (recaptchaData.score < 0.5) {
-      throw new AppError("Bot activity detected", 400);
-    }
+    await verifyRecaptcha(token, "forgot_password");
 
     // Check User
     const existsUser = await prisma.user.findFirst({

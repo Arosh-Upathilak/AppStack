@@ -3,7 +3,8 @@
 import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useSession } from 'next-auth/react';
+import { signOut, useSession } from 'next-auth/react';
+import { toast } from 'react-toastify';
 import Icon from './Icon';
 import type { AppRole, SellerStatus } from '@/types/next-auth';
 
@@ -126,8 +127,41 @@ function SellerCta({ context }: { context: 'buyer' | 'seller' | 'admin' }) {
 
 export default function Sidebar({ role }: SidebarProps) {
   const pathname = usePathname();
+  const { data: session } = useSession();
+  const user = session?.user;
+  const displayName =
+    user?.name || user?.email?.split('@')[0] || 'Your account';
+  const displayMeta = user?.email ?? '';
+  const userInitials = sidebarInitials(user?.name, user?.email);
   const nav =
     role === 'seller' ? sellerNav : role === 'admin' ? adminNav : buyerNav;
+
+  const [accountOpen, setAccountOpen] = React.useState(false);
+  const accountRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    if (!accountOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (accountRef.current && !accountRef.current.contains(e.target as Node)) {
+        setAccountOpen(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setAccountOpen(false);
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [accountOpen]);
+
+  const handleLogout = () => {
+    setAccountOpen(false);
+    toast.success('Logout successful!');
+    signOut({ callbackUrl: '/' });
+  };
+
+  const settingsHref = role === 'admin' ? null : `/${role}/settings`;
 
   const isActive = (item: NavItem) =>
     item.exact ? pathname === item.href : pathname.startsWith(item.href);
@@ -180,14 +214,70 @@ export default function Sidebar({ role }: SidebarProps) {
         <span>Help &amp; docs</span>
       </div>
 
-      <div className="sb-user">
-        <div className="sb-avatar">SK</div>
-        <div className="sb-user-meta">
-          <div className="sb-user-name">Sarah Kim</div>
-          <div className="sb-user-mail">acme.io</div>
-        </div>
-        <Icon name="chevron_up" size={14} style={{ color: 'var(--ink-4)' }} />
+      <div ref={accountRef} style={{ position: 'relative' }}>
+        {accountOpen && (
+          <div className="absolute bottom-[calc(100%+8px)] left-0 right-0 z-50 overflow-hidden rounded-lg border border-line bg-surface shadow-lg">
+            <Link
+              href="/"
+              onClick={() => setAccountOpen(false)}
+              className="flex items-center gap-3 px-3 py-2.5 text-sm font-medium text-ink-2 transition-colors hover:bg-surface-hover"
+            >
+              <Icon name="home" size={16} />
+              <span>Back to site</span>
+            </Link>
+            {settingsHref && (
+              <Link
+                href={settingsHref}
+                onClick={() => setAccountOpen(false)}
+                className="flex items-center gap-3 px-3 py-2.5 text-sm font-medium text-ink-2 transition-colors hover:bg-surface-hover"
+              >
+                <Icon name="settings" size={16} />
+                <span>Account settings</span>
+              </Link>
+            )}
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="flex w-full items-center gap-3 border-t border-line-soft px-3 py-2.5 text-sm font-medium text-danger transition-colors hover:bg-danger-soft"
+            >
+              <Icon name="logout" size={16} />
+              <span>Log out</span>
+            </button>
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={() => setAccountOpen((v) => !v)}
+          aria-haspopup="menu"
+          aria-expanded={accountOpen}
+          className="sb-user"
+          style={{ width: '100%', textAlign: 'left' }}
+        >
+          <div className="sb-avatar">{userInitials}</div>
+          <div className="sb-user-meta">
+            <div className="sb-user-name">{displayName}</div>
+            <div className="sb-user-mail">{displayMeta}</div>
+          </div>
+          <Icon
+            name="chevron_up"
+            size={14}
+            style={{
+              color: 'var(--ink-4)',
+              transition: 'transform .2s ease',
+              transform: accountOpen ? 'rotate(180deg)' : 'none',
+            }}
+          />
+        </button>
       </div>
     </aside>
   );
+}
+
+/** Up to two uppercase initials from a name, falling back to email. */
+function sidebarInitials(name?: string | null, email?: string | null): string {
+  const src = (name || email || '').trim();
+  if (!src) return 'U';
+  const parts = src.split(/[\s@.]+/).filter(Boolean);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return src.slice(0, 2).toUpperCase();
 }

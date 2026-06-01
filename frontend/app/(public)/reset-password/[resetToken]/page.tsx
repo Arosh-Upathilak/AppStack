@@ -6,6 +6,7 @@ import { useState } from "react";
 import Icon from "@/components/Icon";
 import { toast } from "react-toastify";
 import axios from "axios";
+import { retryOnTransient } from "@/lib/retry";
 
 export default function ResetPage() {
   const router = useRouter();
@@ -21,17 +22,22 @@ export default function ResetPage() {
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await axios.post(
-        `${process.env.NEXT_PUBLIC_API_BASE_URL}/auth/reset-password/${resetToken}`,
-        {
-          password: password,
-        },
+      setBusy(true);
+      setError(null);
+      await retryOnTransient(() =>
+        axios.post(
+          `${process.env.NEXT_PUBLIC_API_BASE_URL}/auth/reset-password/${resetToken}`,
+          {
+            password: password,
+          },
+        ),
       );
-      toast.success("Forgot email send successful");
+      toast.success("Password reset successful");
       setDone(true);
       setTimeout(() => router.push("/login"), 1500);
-    } catch (error: any) {
-      const message = error.response?.data?.error || "Password reset failed";
+    } catch (error) {
+      const axiosError = error as any;
+      const message = axiosError.response?.data?.error || "Password reset failed";
       setError(message);
       toast.error(message);
       console.log(error);

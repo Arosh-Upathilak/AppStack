@@ -41,7 +41,7 @@ function GoogleLogo() {
 }
 
 export default function GoogleSignInButton({
-  callbackUrl = "/buyer",
+  callbackUrl = "/",
   label = "Continue with Google",
 }: Props) {
   const [busy, setBusy] = useState(false);
