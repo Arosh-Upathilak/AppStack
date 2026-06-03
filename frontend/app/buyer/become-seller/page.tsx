@@ -57,8 +57,9 @@ export default function BecomeSellerPage() {
     }
   }
 
-  const inputCls =
-    "h-10 w-full rounded-md border border-line bg-surface px-3 text-sm text-ink-1 outline-none transition-colors placeholder:text-ink-5 focus:border-brand";
+  // Shared .input class (globals.css) — full-border focus + ring, consistent
+  // with every other form in the app.
+  const inputCls = "input";
   const labelCls = "text-[13px] font-medium text-ink-2";
   const hintCls = "mt-1 mb-1.5 text-xs text-ink-4";
 
@@ -157,7 +158,7 @@ export default function BecomeSellerPage() {
               you&apos;ll be listing.
             </p>
             <textarea
-              className="min-h-[96px] w-full resize-y rounded-md border border-line bg-surface px-3 py-2.5 text-sm text-ink-1 outline-none transition-colors placeholder:text-ink-5 focus:border-brand"
+              className="input"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               required
