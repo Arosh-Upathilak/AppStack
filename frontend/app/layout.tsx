@@ -5,6 +5,7 @@ import { getServerSession } from "next-auth/next";
 import SessionTimeoutWrapper from "@/utils/SessionTimeoutWrapper";
 import SessionProvider from "@/utils/SessionProvider";
 import ToastProvider from "@/utils/ToastProvider";
+import GoogleAuthToastWrapper from "@/utils/GoogleAuthToastWrapper";
 const inter = Inter({
   subsets: ["latin"],
   variable: "--font-inter",
@@ -34,6 +35,7 @@ export default async function RootLayout({
       <body>
         <SessionProvider session={session}>
           <SessionTimeoutWrapper />
+          <GoogleAuthToastWrapper />
           <ToastProvider>
           {children}
           </ToastProvider>

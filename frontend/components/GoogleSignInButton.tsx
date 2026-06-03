@@ -49,10 +49,15 @@ export default function GoogleSignInButton({
   async function handleClick() {
     try {
       setBusy(true);
+      // Flag the pending OAuth round-trip. The success toast can't fire here
+      // (NextAuth redirects away), so a global watcher shows it once we land
+      // back authenticated — see useGoogleAuthToast.
+      sessionStorage.setItem("pendingGoogleAuth", "1");
       await signIn("google", { callbackUrl });
       // Note: on success, NextAuth redirects away from this page so the
       // `setBusy(false)` below only runs on error.
     } catch (err: any) {
+      sessionStorage.removeItem("pendingGoogleAuth");
       toast.error(err?.message ?? "Could not start Google sign-in");
     } finally {
       setBusy(false);

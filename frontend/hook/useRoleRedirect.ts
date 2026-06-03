@@ -27,6 +27,19 @@ export function useRoleRedirect() {
       toast.error("Your session has expired. Please log in again.");
     }
 
+    // OAuth failures land here via authOptions.pages.error = "/login".
+    const oauthError = searchParams.get("error");
+    if (oauthError) {
+      if (typeof window !== "undefined") {
+        sessionStorage.removeItem("pendingGoogleAuth");
+      }
+      toast.error(
+        oauthError === "OAuthAccountNotLinked"
+          ? "This email is already registered with a different sign-in method."
+          : "Google sign-in failed. Please try again.",
+      );
+    }
+
     if (status !== "authenticated") return;
 
     router.replace("/");
