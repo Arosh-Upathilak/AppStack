@@ -9,13 +9,12 @@ const ToastProvider = ({ children }: { children: React.ReactNode }) => {
     <>
       <ToastContainer
         position="top-center"
-        autoClose={5000}
+        autoClose={4000}
         hideProgressBar={false}
-        closeOnClick={false}
+        closeOnClick
         pauseOnHover
         draggable
         theme="light"
-        style={{ fontSize: "17px" }}
       />
       {children}
     </>

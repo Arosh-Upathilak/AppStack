@@ -59,7 +59,7 @@ export default function SideNav({ open, onClose }: SideNavProps) {
   links.push({ href: "/buyer/settings", label: "Account settings", icon: "settings" });
 
   const handleLogout = () => {
-    toast.success("Logout successful!");
+    toast.success("Logged out successfully");
     signOut({ callbackUrl: "/" });
   };
 

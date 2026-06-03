@@ -58,7 +58,7 @@ export default function PendingSellersTable({ onCountChange }: Props) {
     try {
       await approveSeller(id);
       dropRow(id);
-      toast.success("Seller approved.");
+      toast.success("Seller approved");
     } catch (err: any) {
       toast.error(err?.message || "Could not approve seller.");
     } finally {
@@ -71,7 +71,7 @@ export default function PendingSellersTable({ onCountChange }: Props) {
     try {
       await rejectSeller(id, rejectReason.trim() || null);
       dropRow(id);
-      toast.success("Seller rejected.");
+      toast.success("Seller rejected");
       setRejectingId(null);
       setRejectReason("");
     } catch (err: any) {

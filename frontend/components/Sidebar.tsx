@@ -157,7 +157,7 @@ export default function Sidebar({ role }: SidebarProps) {
 
   const handleLogout = () => {
     setAccountOpen(false);
-    toast.success('Logout successful!');
+    toast.success('Logged out successfully');
     signOut({ callbackUrl: '/' });
   };
 

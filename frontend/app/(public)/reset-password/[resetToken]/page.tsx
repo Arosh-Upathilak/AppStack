@@ -32,7 +32,7 @@ export default function ResetPage() {
           },
         ),
       );
-      toast.success("Password reset successful");
+      toast.success("Password reset successfully");
       setDone(true);
       setTimeout(() => router.push("/login"), 1500);
     } catch (error) {

@@ -751,6 +751,51 @@ textarea.input { padding: 10px 12px; min-height: 96px; resize: vertical; }
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* react-toastify — themed to match AppStack surfaces + semantic tokens */
+.Toastify__toast {
+  border-radius: var(--r-md);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-lg);
+  background: var(--surface);
+  color: var(--ink-1);
+  padding: 12px 14px;
+  min-height: auto;
+  font-family: var(--font-sans);
+}
+.Toastify__toast-body {
+  margin: 0;
+  padding: 0;
+  gap: 10px;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--ink-2);
+}
+.Toastify__toast-icon { width: 20px; margin-inline-end: 10px; }
+.Toastify__close-button {
+  align-self: center;
+  color: var(--ink-4);
+  opacity: 0.6;
+}
+.Toastify__close-button:hover { opacity: 1; }
+.Toastify__progress-bar { height: 3px; }
+
+.Toastify__toast--success { border-left: 3px solid var(--success); }
+.Toastify__toast--success .Toastify__toast-icon svg { fill: var(--success); }
+.Toastify__toast--success .Toastify__progress-bar { background: var(--success); }
+
+.Toastify__toast--error { border-left: 3px solid var(--danger); }
+.Toastify__toast--error .Toastify__toast-icon svg { fill: var(--danger); }
+.Toastify__toast--error .Toastify__progress-bar { background: var(--danger); }
+
+.Toastify__toast--warning { border-left: 3px solid var(--warning); }
+.Toastify__toast--warning .Toastify__toast-icon svg { fill: var(--warning); }
+.Toastify__toast--warning .Toastify__progress-bar { background: var(--warning); }
+
+.Toastify__toast--info { border-left: 3px solid var(--brand); }
+.Toastify__toast--info .Toastify__toast-icon svg { fill: var(--brand); }
+.Toastify__toast--info .Toastify__progress-bar { background: var(--brand); }
+
 /* Product icon tile */
 .app-icon {
   width: 40px;

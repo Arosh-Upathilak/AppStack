@@ -93,7 +93,7 @@ export default function RegisterPage() {
       setVerifyToken(response.data.verifyToken);
       setError("");
       setBusy(false);
-      toast.success("OTP sent successful");
+      toast.success("Verification code sent");
       setStep("otp");
     } catch (error) {
       const axiosError = error as any;
@@ -121,7 +121,7 @@ export default function RegisterPage() {
       );
       setCode("");
       setBusy(false);
-      toast.success("OTP verification successful");
+      toast.success("Account verified successfully");
 
       // Auto sign-in. Every new account is a BUYER — no role branching.
       const response = await signIn("credentials", {
@@ -131,7 +131,7 @@ export default function RegisterPage() {
       });
 
       if (response?.error) {
-        toast.error(response?.error || "Login Error");
+        toast.error(response?.error || "Login failed");
         if (response?.url) router.replace("/register");
       } else {
         setFormData({
@@ -141,7 +141,7 @@ export default function RegisterPage() {
           password: "",
         });
         setError("");
-        toast.success("Successful create account");
+        toast.success("Account created successfully");
       }
     } catch (error) {
       const axiosError = error as any;
@@ -197,7 +197,7 @@ export default function RegisterPage() {
           },
         ),
       );
-      toast.success("Resend OTP successful");
+      toast.success("Verification code resent");
       startTimer();
     } catch (error) {
       const axiosError = error as any;

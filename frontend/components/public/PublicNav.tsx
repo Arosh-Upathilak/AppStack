@@ -28,7 +28,7 @@ export default function PublicNav() {
   const handleLogout = () => {
     setUserMenuOpen(false);
     setSideNavOpen(false);
-    toast.success("Logout successful!");
+    toast.success("Logged out successfully");
     signOut({ callbackUrl: "/" });
   };
 

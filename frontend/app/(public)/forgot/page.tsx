@@ -41,7 +41,7 @@ export default function ForgotPage() {
           },
         ),
       );
-      toast.success("Forgot email send successful");
+      toast.success("Password reset link sent to your email");
       setDone(true);
     } catch (error) {
       const axiosError = error as any;
