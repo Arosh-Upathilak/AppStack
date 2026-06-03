@@ -5,8 +5,6 @@ import { usePathname } from 'next/navigation';
 import Sidebar from './Sidebar';
 import Topbar from './Topbar';
 import { ToastHost, useToast } from './Toast';
-import TweaksPanel from './tweaks/TweaksPanel';
-import { useTweaks } from './tweaks/useTweaks';
 import { PRODUCTS, SUBSCRIPTIONS } from '@/data/mock';
 
 type ChromeRole = 'buyer' | 'seller' | 'admin';
@@ -73,24 +71,17 @@ export type { ChromeRole };
 export default function DashboardChrome({ role, children }: DashboardChromeProps) {
   const pathname = usePathname();
   const { toasts, toast } = useToast();
-  const [t, setTweak] = useTweaks();
   const crumbs = buildCrumbs(role, pathname);
 
   return (
     <ToastContext.Provider value={{ toast }}>
-      <div
-        className="app"
-        data-density={t.density !== 'regular' ? t.density : undefined}
-        data-accent={t.accent !== 'default' ? t.accent : undefined}
-        data-card={t.card !== 'default' ? t.card : undefined}
-      >
+      <div className="app">
         <Sidebar role={role} />
         <div className="main">
           <Topbar crumbs={crumbs} />
           {children}
         </div>
         <ToastHost toasts={toasts} />
-        <TweaksPanel t={t} setTweak={setTweak} />
       </div>
     </ToastContext.Provider>
   );
