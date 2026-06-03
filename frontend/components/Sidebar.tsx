@@ -23,7 +23,6 @@ interface NavItem {
 const buyerNav: NavItem[] = [
   { href: '/buyer', label: 'Overview', icon: 'home', exact: true },
   { href: '/buyer/marketplace', label: 'Marketplace', icon: 'compass' },
-  { href: '/buyer/subscriptions', label: 'Subscriptions', icon: 'box', badge: 12 },
   { href: '/buyer/invoices', label: 'Invoices', icon: 'receipt' },
   { href: '/buyer/settings', label: 'Settings', icon: 'settings' },
 ];
