@@ -21,6 +21,13 @@ export async function verifyRecaptcha(
   const secret = process.env.RECAPTCHA_SECRET_KEY;
 
   if (!secret) {
+    if (process.env.NODE_ENV !== "production") {
+      // Dev/demo: no key configured → skip verification so local/Docker
+      // logins work without a live reCAPTCHA key. In production this stays a
+      // hard error — we never silently disable bot protection on a real
+      // deployment.
+      return;
+    }
     throw new AppError("reCAPTCHA is not configured", 500);
   }
 
