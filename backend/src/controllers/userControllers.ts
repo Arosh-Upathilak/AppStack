@@ -3,6 +3,7 @@ import { AppError, asyncHandler } from "../utils/errorHandler";
 import prisma from "../utils/prisma";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
+import jwt from "jsonwebtoken";
 import { emailRegex } from "../utils/validation";
 import { transporter } from "../utils/nodeMailer";
 import { otpTemplate } from "../template/otpEmail";
@@ -10,6 +11,14 @@ import { redisClient } from "../config/redis";
 import { resetPasswordTemplate } from "../template/resetPasswordEmail";
 import { createAccountTemplate } from "../template/createAccount";
 import { verifyRecaptcha } from "../utils/recaptcha";
+
+const signAccessToken = (id: string, roles: string[]): string => {
+  return jwt.sign(
+    { id, roles },
+    process.env.JWT_SECRET || "demo_super_secret_jwt_key_123",
+    { expiresIn: "30d" }
+  );
+};
 
 // OTP Expire time set
 const OTP_EXPIRY = 300;
@@ -186,9 +195,12 @@ const loginUser = asyncHandler(async (req: Request, res: Response) => {
     throw new AppError("Credentials are wrong", 400);
   }
 
+  const accessToken = signAccessToken(existsUser.id, existsUser.roles);
+
   return res.status(200).json({
     success: true,
     message: `${existsUser.roles} logged successfully`,
+    accessToken,
     user: {
       id: existsUser.id,
       email: existsUser.email,
@@ -276,9 +288,12 @@ const verifyAccount = asyncHandler(async (req: Request, res: Response) => {
   // Cleanup
   await redisClient.del(`user:${verifyToken}`);
 
+  const accessToken = signAccessToken(updatedUser.id, updatedUser.roles);
+
   return res.status(200).json({
     success: true,
     message: "Account verified successfully",
+    accessToken,
     user: {
       id: updatedUser.id,
       email: updatedUser.email,
@@ -444,9 +459,12 @@ const googleLogin = asyncHandler(async (req: Request, res: Response) => {
     }
   }
 
+  const accessToken = signAccessToken(existsUser.id, existsUser.roles);
+
   return res.status(200).json({
     success: true,
     message: "Login Successfully",
+    accessToken,
     user: {
       id: existsUser.id,
       email: existsUser.email,

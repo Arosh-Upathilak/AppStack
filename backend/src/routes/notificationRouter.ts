@@ -7,7 +7,7 @@ const notificationRouter = express.Router();
 
 notificationRouter.get("/getNotifications",authMiddleware,getNotifications)
 notificationRouter.post("/updateReadNotification",authMiddleware,updateReadNotification)
-notificationRouter.post("/deleteNotification",authMiddleware,deleteNotification)
+notificationRouter.delete("/deleteNotification",authMiddleware,deleteNotification)
 
 
 export default notificationRouter

@@ -2,7 +2,7 @@ import morgan from "morgan";
 import fs from "fs";
 import path from "path";
 import { Request, Response, NextFunction } from "express";
-import { nanoid } from "nanoid";
+import crypto from "crypto";
 
 // Logs directory
 const logsDir = path.join(__dirname, "..", "logs");
@@ -38,7 +38,7 @@ export const addRequestId = (
   next: NextFunction
 ) => {
   try {
-    (req as any).reqId = nanoid(8);
+    (req as any).reqId = crypto.randomUUID().substring(0, 8);
     res.setHeader("X-Request-ID", (req as any).reqId);
     next();
   } catch (error) {

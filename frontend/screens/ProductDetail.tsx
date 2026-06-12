@@ -7,7 +7,6 @@ import AppLogo from '@/components/AppLogo';
 import Badge from '@/components/Badge';
 import { ToastContext } from '@/components/DashboardChrome';
 import { PRODUCTS, Product } from '@/data/mock';
-import { createSubscription } from '@/lib/api/subscriptions';
 
 interface ProductDetailProps {
   productId: string;
@@ -306,19 +305,12 @@ export default function ProductDetail({ productId, mode = 'buyer' }: ProductDeta
   const handleConfirm = async () => {
     setSubmitting(true);
     try {
-      await createSubscription({
-        productId: p.id,
-        productName: p.name,
-        vendor: p.vendor,
-        hue: p.hue,
-        category: p.category,
-        plan,
-        seats,
-        cycle: annual ? 'yr' : 'mo',
-        price: effective,
-      });
-      toast(`Subscribed to ${p.name}`);
-      router.push('/buyer/subscriptions');
+      // Simulate database / subscription action delay
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      toast(`Subscribed to ${p.name} (Demo subscription created)`);
+      setSubmitting(false);
+      setShowCheckout(false);
+      router.push('/buyer/marketplace');
     } catch {
       toast('Could not complete subscription. Please try again.');
       setSubmitting(false);

@@ -8,7 +8,7 @@ export async function userAuthorization() {
   }
 
   return {
-    Authorization: `Bearer ${session.user.id}`,
+    Authorization: `Bearer ${(session as any).accessToken}`,
     "Content-Type": "application/json",
   };
 }

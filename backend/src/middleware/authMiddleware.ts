@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import prisma from "../utils/prisma";
+import jwt from "jsonwebtoken";
 
 export const authMiddleware = async (
   req: Request,
@@ -16,10 +17,14 @@ export const authMiddleware = async (
       });
     }
 
-    const userId = authHeader.split(" ")[1];
+    const token = authHeader.split(" ")[1];
+    const decoded = jwt.verify(
+      token,
+      process.env.JWT_SECRET || "demo_super_secret_jwt_key_123"
+    ) as { id: string };
 
     const user = await prisma.user.findUnique({
-      where: { id: userId },
+      where: { id: decoded.id },
     });
 
     if (!user) {

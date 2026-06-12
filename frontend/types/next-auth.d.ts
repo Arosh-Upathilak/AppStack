@@ -16,6 +16,7 @@ declare module "next-auth" {
       role: AppRole[];
       sellerStatus?: SellerStatus | null;
     };
+    accessToken?: string;
     loginTime?: number;
     lastActive?: number;
   }
@@ -25,6 +26,7 @@ declare module "next-auth" {
     email: string;
     role: AppRole[];
     sellerStatus?: SellerStatus | null;
+    accessToken?: string;
   }
 }
 
@@ -33,6 +35,7 @@ declare module "next-auth/jwt" {
     id?: string;
     role?: AppRole[];
     sellerStatus?: SellerStatus | null;
+    accessToken?: string;
     loginTime?: number;
     lastActive?: number;
   }

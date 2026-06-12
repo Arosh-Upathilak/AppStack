@@ -1,5 +1,6 @@
 import { Server } from "socket.io";
 import { Server as HttpServer } from "http";
+import jwt from "jsonwebtoken";
 
 let  io : Server;
 const onlineUsers = new Map<string,string>();
@@ -15,10 +16,19 @@ export const initSocket = (server: HttpServer) => {
   io.on("connection", (socket) => {
     console.log("User connected:", socket.id);
 
-    socket.on("register", (userId: string) => {
-      onlineUsers.set(userId, socket.id);
-      console.log("connect UserId: ",userId)
-      console.log(onlineUsers)
+    socket.on("register", (token: string) => {
+      try {
+        if (!token) return;
+        const decoded = jwt.verify(
+          token,
+          process.env.JWT_SECRET || "demo_super_secret_jwt_key_123"
+        ) as { id: string };
+        const userId = decoded.id;
+        onlineUsers.set(userId, socket.id);
+        console.log("connect UserId (verified): ", userId);
+      } catch (err) {
+        console.error("Socket register verification failed:", err);
+      }
     });
 
     socket.on("disconnect", () => {
