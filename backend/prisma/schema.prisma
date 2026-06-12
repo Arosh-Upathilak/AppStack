@@ -14,19 +14,88 @@ datasource db {
 }
 
 model User {
-  id            String        @id @default(uuid())
-  userName      String
-  role          Role          @default(Buyer)
-  email         String        @unique
-  password      String
-  isVerified    Boolean       @default(false)
-  otp           Int
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  id         String  @id @default(uuid())
+  firstName  String?
+  lastName   String?
+  email      String  @unique
+  password   String?
+  isVerified Boolean @default(false)
+
+  roles Role[]
+
+  approvedSellers Seller[]
+
+  notifications Notification[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+
+model Seller {
+  id               String           @id @default(uuid())
+  userId           String
+  payoutEmail      String  @unique
+  businessName     String
+  aboutProject     String?
+
+  isApproveSeller  IsApproveSeller  @default(PENDING)
+
+  approveByAdminId  String?
+  approveByAdmin   User?            @relation(fields: [approveByAdminId], references: [id])
+
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+}
+
+model Notification {
+  id        String               @id @default(uuid())
+
+  userId    String
+  user      User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  title     String
+  message   String               @db.Text
+  type      NotificationType
+  isRead    Boolean              @default(false)
+  priority  NotificationPriority @default(NORMAL)
+  
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
+
+  @@index([userId])
+  @@index([userId, isRead])
+  @@index([userId, type])
+  @@index([createdAt])
 }
 
 enum Role {
-  Admin
-  Buyer
-  Seller
+  BUYER
+  SELLER
+  ADMIN
+}
+
+enum IsApproveSeller{
+  PENDING
+  APPROVED
+  DENIED
+}
+
+enum NotificationType {
+  SELLER_PENDING
+  SELLER_APPROVED
+  SELLER_REJECTED
+  ORDER_UPDATE
+  PAYMENT_STATUS
+  PROMOTION
+  SYSTEM_ALERT
+  SUBSCRIPTION_CREATED
+  OTHER
+}
+
+enum NotificationPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
 }
