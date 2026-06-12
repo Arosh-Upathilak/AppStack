@@ -8,6 +8,7 @@ import {
   approveSeller,
   Seller,
 } from "@/lib/api/sellers";
+import { useNotificationStore } from "@/store/useNotificationStore";
 
 interface Props {
   onCountChange?: (count: number) => void;
@@ -35,6 +36,8 @@ export default function PendingSellersTable({
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
 
+  const notifications = useNotificationStore((state) => state.notifications);
+
   const refresh = useCallback(async () => {
     try {
       const response = await getSellers();
@@ -44,9 +47,13 @@ export default function PendingSellersTable({
       );
 
       setItems(pendingSellers);
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      toast.error("Failed to fetch sellers");
+      if (error.response?.status === 403) {
+        toast.error("Access Denied: Admin privileges required.");
+      } else {
+        toast.error("Failed to fetch sellers");
+      }
     } finally {
       setLoading(false);
     }
@@ -55,6 +62,17 @@ export default function PendingSellersTable({
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    // Dynamically refresh table when a new SELLER_PENDING notification is received
+    const pendingCountFromNotifications = notifications.filter(
+      (n) => n.type === "SELLER_PENDING" && !n.isRead
+    ).length;
+
+    if (pendingCountFromNotifications > 0) {
+      refresh();
+    }
+  }, [notifications, refresh]);
 
   useEffect(() => {
     onCountChange?.(items.length);
@@ -75,9 +93,13 @@ export default function PendingSellersTable({
       removeSeller(sellerId);
 
       toast.success("Seller approved successfully");
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      toast.error("Failed to approve seller");
+      const errMsg =
+        error.response?.data?.error ||
+        error.response?.data?.message ||
+        "Failed to approve seller";
+      toast.error(errMsg);
     } finally {
       setBusyId(null);
     }
@@ -92,9 +114,13 @@ export default function PendingSellersTable({
       removeSeller(sellerId);
 
       toast.success("Seller rejected successfully");
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      toast.error("Failed to reject seller");
+      const errMsg =
+        error.response?.data?.error ||
+        error.response?.data?.message ||
+        "Failed to reject seller";
+      toast.error(errMsg);
     } finally {
       setBusyId(null);
     }
@@ -133,11 +159,15 @@ export default function PendingSellersTable({
         <tbody>
           {items.map((seller) => {
             const busy = busyId === seller.id;
+            const isNew = Date.now() - new Date(seller.createdAt).getTime() < 30000;
 
             return (
               <tr
                 key={seller.id}
-                className="border-b border-line-soft last:border-0"
+                className="border-b border-line-soft last:border-0 transition-colors duration-1000"
+                style={{
+                  background: isNew ? "var(--brand-soft)" : "transparent",
+                }}
               >
                 <td className="px-4 py-3 font-medium text-ink-1">
                   {seller.businessName}

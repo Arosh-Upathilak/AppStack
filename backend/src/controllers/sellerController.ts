@@ -7,8 +7,6 @@ const createSellerRequest = asyncHandler(
   async (req: Request, res: Response) => {
     const { payoutEmail, businessName, aboutProject } = req.body;
     const userId = (req as any).user.id;
-    console.log("userId", userId);
-    console.log("createSellerRequest happen");
 
     // Validation
     if (!payoutEmail || !businessName) {
@@ -25,7 +23,7 @@ const createSellerRequest = asyncHandler(
       throw new AppError("Account already seller", 400);
     }
 
-    await prisma.seller.create({
+    const newSeller = await prisma.seller.create({
       data: {
         userId,
         payoutEmail,
@@ -46,6 +44,33 @@ const createSellerRequest = asyncHandler(
     });
 
     sendNotification(userId, notification);
+
+    // Notify all admin users
+    try {
+      const admins = await prisma.user.findMany({
+        where: {
+          roles: {
+            has: "ADMIN",
+          },
+        },
+      });
+
+      for (const admin of admins) {
+        const adminNotification = await prisma.notification.create({
+          data: {
+            userId: admin.id,
+            title: "New Seller Application",
+            message: `New seller application from "${businessName}" (Seller ID: ${newSeller.id}) is pending review.`,
+            type: "SELLER_PENDING",
+            priority: "NORMAL",
+          },
+        });
+
+        sendNotification(admin.id, adminNotification);
+      }
+    } catch (err) {
+      console.error("Failed to send socket notifications to admins:", err);
+    }
 
     return res.status(200).json({
       success: true,
@@ -121,10 +146,21 @@ const updateStatusOfSeller = asyncHandler(
 );
 
 const getSellerStatus = asyncHandler(async (req: Request, res: Response) => {
-  const sellers = await prisma.seller.findMany({
+  const isAdmin = (req as any).user?.roles?.includes("ADMIN");
+
+  const rawSellers = await prisma.seller.findMany({
     orderBy: {
       createdAt: "desc",
     },
+  });
+
+  const sellers = rawSellers.map((seller) => {
+    if (!isAdmin) {
+      // Remove payoutEmail for non-admins to prevent leak
+      const { payoutEmail, ...rest } = seller;
+      return rest;
+    }
+    return seller;
   });
 
   return res.status(200).json({

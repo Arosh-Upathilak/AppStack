@@ -22,9 +22,6 @@ interface NavItem {
 
 const sellerNav: NavItem[] = [
   { href: "/seller", label: "Overview", icon: "home", exact: true },
-  { href: "/seller/products", label: "Products", icon: "package" },
-  { href: "/seller/analytics", label: "Analytics", icon: "chart" },
-  { href: "/seller/wallet", label: "Wallet", icon: "wallet" },
   { href: "/seller/settings", label: "Settings", icon: "settings" },
 ];
 
@@ -134,13 +131,12 @@ export default function Sidebar({ role }: SidebarProps) {
   const buyerNav: NavItem[] = [
     { href: "/buyer", label: "Overview", icon: "home", exact: true },
     { href: "/buyer/marketplace", label: "Marketplace", icon: "compass" },
-    { href: "/buyer/invoices", label: "Invoices", icon: "receipt" },
     { href: "/buyer/settings", label: "Settings", icon: "settings" },
     {
       href: "/buyer/notification",
       label: "Notification",
       icon: "bell",
-      badge: notificationCount>0 ? notificationCount : undefined,
+      badge: notificationCount > 0 ? notificationCount : undefined,
     },
   ];
 
@@ -181,12 +177,7 @@ export default function Sidebar({ role }: SidebarProps) {
   const isActive = (item: NavItem) =>
     item.exact ? pathname === item.href : pathname.startsWith(item.href);
 
-  const primaryCta =
-    role === "buyer"
-      ? { href: "/buyer/marketplace", label: "New Subscription" }
-      : role === "seller"
-        ? { href: "/seller/products", label: "New Product" }
-        : null; // admin: no primary CTA
+  const primaryCta: { href: string; label: string } | null = null;
 
   return (
     <aside className="sidebar">
@@ -197,16 +188,6 @@ export default function Sidebar({ role }: SidebarProps) {
           <div className="sb-brand-meta">{PORTAL_LABEL[role]}</div>
         </div>
       </div>
-
-      {primaryCta && (
-        <Link
-          href={primaryCta.href}
-          className="btn btn-primary"
-          style={{ width: "100%", justifyContent: "center", marginBottom: 8 }}
-        >
-          <Icon name="plus" size={14} /> {primaryCta.label}
-        </Link>
-      )}
 
       <div className="sb-section">Workspace</div>
       {nav.map((item) => (

@@ -6,6 +6,8 @@ export interface Notification {
   message: string;
   isRead?: boolean;
   createdAt?: string;
+  type?: string;
+  priority?: string;
 }
 
 interface NotificationStore {
@@ -21,6 +23,8 @@ interface NotificationStore {
 
   markAsRead: (id: string) => void;
 
+  deleteNotification: (id: string) => void;
+
   clearNotifications: () => void;
 }
 
@@ -29,12 +33,17 @@ export const useNotificationStore =
     notifications: [],
 
     addNotification: (notification) =>
-      set((state) => ({
-        notifications: [
-          notification,
-          ...state.notifications,
-        ],
-      })),
+      set((state) => {
+        if (state.notifications.some((n) => n.id === notification.id)) {
+          return { notifications: state.notifications };
+        }
+        return {
+          notifications: [
+            notification,
+            ...state.notifications,
+          ],
+        };
+      }),
 
     setNotifications: (notifications) =>
       set({ notifications }),
@@ -46,6 +55,11 @@ export const useNotificationStore =
             ? { ...n, isRead: true }
             : n,
         ),
+      })),
+
+    deleteNotification: (id) =>
+      set((state) => ({
+        notifications: state.notifications.filter((n) => n.id !== id),
       })),
 
     clearNotifications: () =>

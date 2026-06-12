@@ -38,10 +38,14 @@ export const authOptions: NextAuthOptions = {
           );
 
           const user = response.data.user;
+          const accessToken = response.data.accessToken;
 
           if (!user) return null;
 
-          return user;
+          return {
+            ...user,
+            accessToken,
+          };
         } catch (err: any) {
           throw new Error(err.response?.data?.error || "Login failed");
         }
@@ -75,10 +79,12 @@ export const authOptions: NextAuthOptions = {
           ),
         );
         const backendUser = res.data?.user;
+        const backendAccessToken = res.data?.accessToken;
         if (backendUser) {
           (user as any).id = backendUser.id;
           (user as any).role = backendUser.role;
           (user as any).sellerStatus = backendUser.sellerStatus ?? null;
+          (user as any).accessToken = backendAccessToken;
         }
       } catch (err) {
         console.warn(
@@ -99,6 +105,7 @@ export const authOptions: NextAuthOptions = {
         token.id = (user as any).id;
         token.role = (user as any).role;
         token.sellerStatus = (user as any).sellerStatus ?? null;
+        token.accessToken = (user as any).accessToken;
         // Fixed login time
         token.loginTime = now;
         // Last activity time
@@ -132,6 +139,7 @@ export const authOptions: NextAuthOptions = {
         (session.user as any).id = token.id;
         (session.user as any).role = token.role;
         (session.user as any).sellerStatus = token.sellerStatus ?? null;
+        (session as any).accessToken = token.accessToken;
         (session as any).loginTime = token.loginTime;
         (session as any).lastActive = token.lastActive;
       }

@@ -5,13 +5,18 @@ import { toast } from "react-toastify";
 import {
   getNotifications,
   markNotificationAsRead,
+  deleteNotification,
   Notification,
 } from "@/lib/api/notification";
 import { useNotificationStore } from "@/store/useNotificationStore";
+import Icon from "@/components/Icon";
 
 export default function NotificationPage() {
-  const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const notifications = useNotificationStore(
+    (state) => state.notifications
+  );
 
   const setStoreNotifications = useNotificationStore(
     (state) => state.setNotifications
@@ -21,14 +26,14 @@ export default function NotificationPage() {
     (state) => state.markAsRead
   );
 
+  const deleteNotificationStore = useNotificationStore(
+    (state) => state.deleteNotification
+  );
+
   useEffect(() => {
     const loadNotifications = async () => {
       try {
         const response = await getNotifications();
-
-        setNotifications(response.notifications);
-
-        // Update Zustand store so the sidebar badge updates
         setStoreNotifications(response.notifications);
       } catch (error) {
         console.error(error);
@@ -44,21 +49,22 @@ export default function NotificationPage() {
   const handleRead = async (notificationId: string) => {
     try {
       await markNotificationAsRead(notificationId);
-
-      // Update local state
-      setNotifications((prev) =>
-        prev.map((notification) =>
-          notification.id === notificationId
-            ? { ...notification, isRead: true }
-            : notification
-        )
-      );
-
-      // Update Zustand store
       markAsRead(notificationId);
     } catch (error) {
       console.error(error);
       toast.error("Failed to update notification");
+    }
+  };
+
+  const handleDelete = async (e: React.MouseEvent, notificationId: string) => {
+    e.stopPropagation(); // prevent triggering mark as read
+    try {
+      await deleteNotification(notificationId);
+      deleteNotificationStore(notificationId);
+      toast.success("Notification deleted");
+    } catch (error) {
+      console.error(error);
+      toast.error("Failed to delete notification");
     }
   };
 
@@ -134,16 +140,33 @@ export default function NotificationPage() {
                   {notification.title}
                 </h3>
 
-                {!notification.isRead && (
-                  <span
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  {!notification.isRead && (
+                    <span
+                      style={{
+                        width: 10,
+                        height: 10,
+                        borderRadius: "50%",
+                        background: "#2563eb",
+                      }}
+                    />
+                  )}
+                  <button
+                    onClick={(e) => handleDelete(e, notification.id)}
                     style={{
-                      width: 10,
-                      height: 10,
-                      borderRadius: "50%",
-                      background: "#2563eb",
+                      border: "none",
+                      background: "transparent",
+                      color: "var(--ink-4)",
+                      cursor: "pointer",
+                      padding: 4,
+                      display: "flex",
+                      alignItems: "center",
                     }}
-                  />
-                )}
+                    title="Delete notification"
+                  >
+                    <Icon name="trash" size={14} />
+                  </button>
+                </div>
               </div>
 
               <p

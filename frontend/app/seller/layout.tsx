@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { authOptions } from "@/utils/authOptions";
 import type { SellerStatus } from "@/types/next-auth";
 import PendingApprovalGate from "@/components/seller/PendingApprovalGate";
+import DashboardChrome from "@/components/DashboardChrome";
 
 export default async function SellerLayout({
   children,
@@ -30,5 +31,5 @@ export default async function SellerLayout({
     return <PendingApprovalGate status={status} />;
   }
 
-  return <>{children}</>;
+  return <DashboardChrome role="seller">{children}</DashboardChrome>;
 }

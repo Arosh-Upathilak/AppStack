@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { useSession } from "next-auth/react";
 import { useNotificationStore } from "@/store/useNotificationStore";
 import { getSocket } from "@/lib/socket";
+import { getNotifications } from "@/lib/api/notification";
 
 export default function NotificationProvider({
   children,
@@ -13,6 +14,10 @@ export default function NotificationProvider({
 
   const addNotification = useNotificationStore(
     (state) => state.addNotification,
+  );
+
+  const setNotifications = useNotificationStore(
+    (state) => state.setNotifications,
   );
 
   useEffect(() => {
@@ -28,17 +33,28 @@ export default function NotificationProvider({
   }, []);
 
   useEffect(() => {
-  console.log("NotificationProvider mounted");
-}, []);
+    console.log("NotificationProvider mounted");
+  }, []);
 
   useEffect(() => {
-    const userId = (session?.user as any)?.id;
+    const accessToken = (session as any)?.accessToken;
 
-    if (!userId) return;
+    if (!accessToken) return;
+
+    // Fetch persisted notifications from the backend
+    getNotifications()
+      .then((res) => {
+        if (res.success && res.notifications) {
+          setNotifications(res.notifications);
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to fetch notifications:", err);
+      });
 
     const socket = getSocket();
 
-    socket.emit("register", userId);
+    socket.emit("register", accessToken);
 
     const handleNotification = (notification: any) => {
       addNotification(notification);
@@ -49,7 +65,7 @@ export default function NotificationProvider({
     return () => {
       socket.off("notification", handleNotification);
     };
-  }, [session?.user, addNotification]);
+  }, [session, addNotification, setNotifications]);
 
   return <>{children}</>;
 }
