@@ -21,6 +21,7 @@ import integrationRouter from "./routes/integrationRouter";
 import webhookRouter from "./routes/webhookRouter";
 import refundRouter from "./routes/refundRouter";
 import { runBillingCycle } from "./services/scheduler";
+import { processDueWebhookEvents } from "./services/webhookWorker";
 
 
 const server = express();
@@ -180,6 +181,12 @@ const startServer = async () => {
       console.error("Failed to run scheduled billing cycle:", err);
     });
   }, 1000 * 60 * 60); // hourly
+
+  setInterval(() => {
+    processDueWebhookEvents().catch((err) => {
+      console.error("Failed to process due webhook events:", err);
+    });
+  }, 1000 * 60); // every minute
 
   httpServer.listen(port, () => {
     console.log(`🚀 Server running at http://localhost:${port}`);

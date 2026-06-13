@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "react-toastify";
-import Icon from "@/components/Icon";
 import {
   getPendingCancellations,
   decideCancellation,
@@ -28,7 +27,11 @@ export default function AdminPendingCancellationsPage() {
   }
 
   useEffect(() => {
-    void reload();
+    const timeout = window.setTimeout(() => {
+      void reload();
+    }, 0);
+
+    return () => window.clearTimeout(timeout);
   }, []);
 
   async function handleDecision(subscriptionId: string, decision: "APPROVE" | "REJECT") {

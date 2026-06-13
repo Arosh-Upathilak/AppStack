@@ -2,11 +2,181 @@ import crypto from "crypto";
 import axios from "axios";
 import prisma from "../utils/prisma";
 
+type WebhookMode = "LIVE" | "TEST";
+
+type SendWebhookOptions = {
+  mode?: WebhookMode;
+  deliverImmediately?: boolean;
+};
+
+const MAX_ATTEMPTS = 5;
+const RETRY_DELAYS_MS = [
+  60 * 1000,
+  5 * 60 * 1000,
+  15 * 60 * 1000,
+  60 * 60 * 1000,
+];
+
 export function generateWebhookSignature(payload: string, secret: string): string {
   return crypto.createHmac("sha256", secret).update(payload).digest("hex");
 }
 
-export async function sendWebhookEvent(productId: string, eventType: string, payloadObj: any): Promise<string> {
+export async function ensureWebhookSecret(productId: string): Promise<string> {
+  const product = await prisma.product.findUnique({
+    where: { id: productId },
+    select: { webhookSecret: true },
+  });
+
+  if (!product) {
+    throw new Error(`Product ${productId} not found`);
+  }
+
+  if (product.webhookSecret) {
+    return product.webhookSecret;
+  }
+
+  const secret = crypto.randomUUID();
+  await prisma.product.update({
+    where: { id: productId },
+    data: { webhookSecret: secret },
+  });
+  return secret;
+}
+
+function nextRetryAt(attempts: number) {
+  const delay = RETRY_DELAYS_MS[Math.min(attempts - 1, RETRY_DELAYS_MS.length - 1)];
+  return new Date(Date.now() + delay);
+}
+
+function responseBody(error: unknown) {
+  if (axios.isAxiosError(error)) {
+    if (error.response?.data) {
+      return JSON.stringify(error.response.data).substring(0, 2000);
+    }
+    return error.message || "Webhook delivery failed";
+  }
+
+  return error instanceof Error ? error.message : "Webhook delivery failed";
+}
+
+export async function deliverWebhookEvent(eventId: string, force = false) {
+  const event = await prisma.webhookEvent.findUnique({
+    where: { id: eventId },
+    include: { product: true },
+  });
+
+  if (!event) {
+    throw new Error(`Webhook event ${eventId} not found`);
+  }
+
+  if (event.status === "DELIVERED" && !force) {
+    return event;
+  }
+
+  if (
+    event.nextAttemptAt &&
+    event.nextAttemptAt.getTime() > Date.now() &&
+    !force
+  ) {
+    return event;
+  }
+
+  if (!event.product.webhookUrl) {
+    return prisma.webhookEvent.update({
+      where: { id: event.id },
+      data: {
+        status: "FAILED",
+        nextAttemptAt: null,
+        responseBody: "No webhook URL configured for the product",
+      },
+    });
+  }
+
+  const secret = await ensureWebhookSecret(event.productId);
+  const signature = generateWebhookSignature(event.payload, secret);
+  const attempts = event.attempts + 1;
+
+  await prisma.webhookEvent.update({
+    where: { id: event.id },
+    data: {
+      status: "PENDING",
+      attempts,
+      lastAttempt: new Date(),
+      nextAttemptAt: null,
+    },
+  });
+
+  try {
+    const response = await axios.post(event.product.webhookUrl, event.payload, {
+      headers: {
+        "Content-Type": "application/json",
+        "X-AppStack-Signature": signature,
+        "X-AppStack-Event-Id": event.id,
+      },
+      timeout: 10000,
+    });
+
+    return prisma.webhookEvent.update({
+      where: { id: event.id },
+      data: {
+        status: "DELIVERED",
+        deliveredAt: new Date(),
+        responseCode: response.status,
+        responseBody: JSON.stringify(response.data).substring(0, 2000),
+        nextAttemptAt: null,
+      },
+    });
+  } catch (error) {
+    const failedPermanently = attempts >= MAX_ATTEMPTS;
+    const responseCode = axios.isAxiosError(error)
+      ? error.response?.status ?? null
+      : null;
+
+    return prisma.webhookEvent.update({
+      where: { id: event.id },
+      data: {
+        status: failedPermanently ? "FAILED" : "PENDING",
+        responseCode,
+        responseBody: responseBody(error),
+        nextAttemptAt: failedPermanently ? null : nextRetryAt(attempts),
+      },
+    });
+  }
+}
+
+export async function processDueWebhookEvents(limit = 25) {
+  const events = await prisma.webhookEvent.findMany({
+    where: {
+      status: "PENDING",
+      nextAttemptAt: {
+        lte: new Date(),
+      },
+    },
+    orderBy: {
+      nextAttemptAt: "asc",
+    },
+    take: limit,
+  });
+
+  for (const event of events) {
+    try {
+      await deliverWebhookEvent(event.id);
+    } catch (error) {
+      console.error(`[Webhook] Failed to process due event ${event.id}:`, error);
+    }
+  }
+
+  return events.length;
+}
+
+export async function sendWebhookEvent(
+  productId: string,
+  eventType: string,
+  payloadObj: unknown,
+  options: SendWebhookOptions = {},
+): Promise<string> {
+  await ensureWebhookSecret(productId);
+
   const product = await prisma.product.findUnique({
     where: { id: productId },
   });
@@ -15,120 +185,43 @@ export async function sendWebhookEvent(productId: string, eventType: string, pay
     throw new Error(`Product ${productId} not found`);
   }
 
-  // Ensure secret exists
-  let secret = product.webhookSecret;
-  if (!secret) {
-    secret = crypto.randomUUID();
-    await prisma.product.update({
-      where: { id: productId },
-      data: { webhookSecret: secret },
-    });
-  }
-
+  const mode = options.mode ?? "LIVE";
   const payload = JSON.stringify({
     event: eventType,
+    mode,
     data: payloadObj,
     timestamp: new Date().toISOString(),
   });
-
-  const signature = generateWebhookSignature(payload, secret);
 
   const dbEvent = await prisma.webhookEvent.create({
     data: {
       productId,
       eventType,
       payload,
+      mode,
       status: "PENDING",
       attempts: 0,
+      nextAttemptAt: new Date(),
     },
   });
 
-  if (product.webhookUrl) {
-    // Run delivery asynchronously
-    executeWebhookDelivery(dbEvent.id, product.webhookUrl, payload, signature).catch((err) => {
-      console.error(`[Webhook] Async delivery trigger error for event ${dbEvent.id}:`, err);
-    });
-  } else {
-    // No webhook URL configured, mark as failed immediately
+  if (!product.webhookUrl) {
     await prisma.webhookEvent.update({
       where: { id: dbEvent.id },
       data: {
         status: "FAILED",
+        nextAttemptAt: null,
         responseBody: "No webhook URL configured for the product",
       },
+    });
+    return dbEvent.id;
+  }
+
+  if (options.deliverImmediately ?? true) {
+    deliverWebhookEvent(dbEvent.id).catch((err) => {
+      console.error(`[Webhook] Async delivery trigger error for event ${dbEvent.id}:`, err);
     });
   }
 
   return dbEvent.id;
-}
-
-async function executeWebhookDelivery(
-  eventId: string,
-  webhookUrl: string,
-  payload: string,
-  signature: string
-) {
-  let attempts = 0;
-  const maxAttempts = 5;
-  let delay = 1000; // 1s start delay
-
-  while (attempts < maxAttempts) {
-    attempts++;
-    try {
-      console.log(`[Webhook] Event ${eventId} attempting delivery to ${webhookUrl} (attempt ${attempts})`);
-      const response = await axios.post(webhookUrl, payload, {
-        headers: {
-          "Content-Type": "application/json",
-          "X-AppStack-Signature": signature,
-          "X-AppStack-Event-Id": eventId,
-        },
-        timeout: 10000, // 10 seconds timeout
-      });
-
-      // Update delivery as successful
-      await prisma.webhookEvent.update({
-        where: { id: eventId },
-        data: {
-          status: "DELIVERED",
-          attempts,
-          lastAttempt: new Date(),
-          responseCode: response.status,
-          responseBody: JSON.stringify(response.data).substring(0, 2000),
-        },
-      });
-      console.log(`[Webhook] Event ${eventId} successfully delivered on attempt ${attempts}`);
-      return;
-    } catch (error: any) {
-      console.error(`[Webhook] Event ${eventId} delivery failure (attempt ${attempts}):`, error.message);
-      
-      const responseCode = error.response?.status || null;
-      const responseBody = error.response?.data 
-        ? JSON.stringify(error.response.data).substring(0, 2000) 
-        : error.message || "Unknown delivery error";
-
-      // Update current attempt status
-      await prisma.webhookEvent.update({
-        where: { id: eventId },
-        data: {
-          attempts,
-          lastAttempt: new Date(),
-          responseCode,
-          responseBody,
-        },
-      });
-
-      if (attempts >= maxAttempts) {
-        await prisma.webhookEvent.update({
-          where: { id: eventId },
-          data: { status: "FAILED" },
-        });
-        console.warn(`[Webhook] Event ${eventId} failed all delivery attempts`);
-        break;
-      }
-
-      // Wait with exponential backoff
-      await new Promise((resolve) => setTimeout(resolve, delay));
-      delay *= 2;
-    }
-  }
 }

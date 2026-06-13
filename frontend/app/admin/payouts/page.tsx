@@ -36,7 +36,11 @@ export default function AdminPayoutsPage() {
   };
 
   useEffect(() => {
-    loadPayouts();
+    const timeout = window.setTimeout(() => {
+      void loadPayouts();
+    }, 0);
+
+    return () => window.clearTimeout(timeout);
   }, []);
 
   const handleApprove = async (payout: PayoutRequestAdmin) => {

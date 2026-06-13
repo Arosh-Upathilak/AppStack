@@ -213,16 +213,43 @@ export async function decideProduct(
   return res.data.product;
 }
 
-export async function listProductWebhookEvents(productId: string): Promise<WebhookEvent[]> {
+export interface WebhookEventFilters {
+  status?: WebhookEvent["status"] | "";
+  eventType?: string;
+  mode?: WebhookEvent["mode"] | "";
+}
+
+export async function listProductWebhookEvents(
+  productId: string,
+  filters?: WebhookEventFilters,
+): Promise<WebhookEvent[]> {
   const headers = await userAuthorization();
   const res = await axios.get<{ events: WebhookEvent[] }>(
     `${API_BASE}/webhooks/products/${productId}`,
     {
       headers,
       withCredentials: true,
+      params: {
+        ...(filters?.status ? { status: filters.status } : {}),
+        ...(filters?.eventType ? { eventType: filters.eventType } : {}),
+        ...(filters?.mode ? { mode: filters.mode } : {}),
+      },
     }
   );
   return res.data.events;
+}
+
+export async function sendTestWebhookEvent(productId: string): Promise<WebhookEvent> {
+  const headers = await userAuthorization();
+  const res = await axios.post<{ event: WebhookEvent }>(
+    `${API_BASE}/webhooks/products/${productId}/test`,
+    {},
+    {
+      headers,
+      withCredentials: true,
+    }
+  );
+  return res.data.event;
 }
 
 export async function retryWebhookEvent(eventId: string): Promise<WebhookEvent> {

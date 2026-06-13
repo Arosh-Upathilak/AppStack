@@ -1,6 +1,7 @@
 import prisma from "../utils/prisma";
 import { sendNotification } from "../socket/socketConnect";
-import { sendWebhookEvent } from "./webhookWorker";
+import { processDueWebhookEvents, sendWebhookEvent } from "./webhookWorker";
+import { randomBytes } from "crypto";
 
 function addBillingPeriod(start: Date, interval: "MONTHLY" | "YEARLY") {
   const end = new Date(start);
@@ -13,15 +14,15 @@ function addBillingPeriod(start: Date, interval: "MONTHLY" | "YEARLY") {
 }
 
 function invoiceNumber() {
-  const crypto = require("crypto");
-  return `INV-${new Date().getFullYear()}-${crypto
-    .randomBytes(4)
+  return `INV-${new Date().getFullYear()}-${randomBytes(4)
     .toString("hex")
     .toUpperCase()}`;
 }
 
 export async function runBillingCycle() {
   console.log("[Scheduler] Starting billing cycle check...");
+
+  await processDueWebhookEvents();
   
   // First, unlock transactions older than 30 days
   await unlockTransactions();

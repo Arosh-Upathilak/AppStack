@@ -282,7 +282,7 @@ export default function ProductDetail({ productId, mode = 'buyer' }: ProductDeta
     if (!selectedPlan) return;
     setSubmitting(true);
     try {
-      await createSubscription({
+      const result = await createSubscription({
         productId: product.id,
         planId: selectedPlan.id,
         paymentMethodId: input.paymentMethodId,
@@ -290,7 +290,11 @@ export default function ProductDetail({ productId, mode = 'buyer' }: ProductDeta
         seats: input.seats,
         acceptEmailConsent: input.acceptEmailConsent,
       });
-      toast(`Subscribed to ${product.name}`);
+      toast(
+        result.subscription.status === "PENDING"
+          ? `${product.name} is pending SaaS activation`
+          : `Subscribed to ${product.name}`,
+      );
       setShowCheckout(false);
       router.push('/buyer/settings');
     } catch (err) {

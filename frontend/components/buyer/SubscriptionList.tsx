@@ -88,6 +88,9 @@ export default function SubscriptionList() {
                   <td style={{ paddingLeft: 20 }}>
                     <div style={{ fontWeight: 600, color: 'var(--ink-1)' }}>{item.productName}</div>
                     <div className="muted" style={{ fontSize: 12 }}>{item.recipientEmail}</div>
+                    {item.integrationStatusMessage && (
+                      <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>{item.integrationStatusMessage}</div>
+                    )}
                   </td>
                   <td>{item.planName}</td>
                   <td>{new Date(item.nextBillingAt).toLocaleDateString()}</td>

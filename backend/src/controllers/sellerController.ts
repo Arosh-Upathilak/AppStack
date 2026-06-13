@@ -2,6 +2,7 @@ import { AppError, asyncHandler } from "../utils/errorHandler";
 import { Request, Response } from "express";
 import prisma from "../utils/prisma";
 import { sendNotification } from "../socket/socketConnect";
+import { SubscriptionStatus } from "@prisma/client";
 
 const createSellerRequest = asyncHandler(
   async (req: Request, res: Response) => {
@@ -533,10 +534,172 @@ const decidePayout = asyncHandler(async (req: Request, res: Response) => {
   }
 });
 
+const getSellerSubscriptionSummary = asyncHandler(
+  async (req: Request, res: Response) => {
+    const sellerId = (req as any).user.id;
+    const productId =
+      typeof req.query.productId === "string" ? req.query.productId : undefined;
+    const requestedStatus =
+      typeof req.query.status === "string" ? req.query.status : undefined;
+    const status = requestedStatus
+      ? Object.values(SubscriptionStatus).find(
+          (value) => value === requestedStatus,
+        )
+      : undefined;
+
+    if (requestedStatus && !status) {
+      throw new AppError("Invalid subscription status filter", 400);
+    }
+
+    const sellerProducts = await prisma.product.findMany({
+      where: {
+        sellerId,
+        ...(productId ? { id: productId } : {}),
+      },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        status: true,
+        plans: {
+          select: {
+            id: true,
+            name: true,
+            identifier: true,
+            priceCents: true,
+            currency: true,
+            billingInterval: true,
+          },
+        },
+        subscriptions: {
+          where: status ? { status } : undefined,
+          include: {
+            plan: {
+              select: {
+                id: true,
+                name: true,
+                identifier: true,
+                priceCents: true,
+                currency: true,
+                billingInterval: true,
+              },
+            },
+          },
+          orderBy: {
+            createdAt: "desc",
+          },
+        },
+      },
+      orderBy: {
+        updatedAt: "desc",
+      },
+    });
+
+    const subscriptions = sellerProducts.flatMap((product) =>
+      product.subscriptions.map((subscription) => ({
+        id: subscription.id,
+        productId: product.id,
+        productName: product.name,
+        productSlug: product.slug,
+        planId: subscription.planId,
+        planName: subscription.plan.name,
+        planIdentifier: subscription.plan.identifier,
+        status: subscription.status,
+        seats: subscription.seats,
+        amountCents: subscription.plan.priceCents * subscription.seats,
+        currency: subscription.plan.currency,
+        billingInterval: subscription.plan.billingInterval,
+        currentPeriodStart: subscription.currentPeriodStart,
+        currentPeriodEnd: subscription.currentPeriodEnd,
+        nextBillingAt: subscription.nextBillingAt,
+        createdAt: subscription.createdAt,
+        updatedAt: subscription.updatedAt,
+      })),
+    );
+
+    const activeSubscriptions = subscriptions.filter(
+      (subscription) =>
+        subscription.status === "ACTIVE" ||
+        subscription.status === "PENDING" ||
+        subscription.status === "CHANGE_PENDING",
+    );
+    const canceledSubscriptions = subscriptions.filter(
+      (subscription) =>
+        subscription.status === "CANCELED" ||
+        subscription.status === "CANCEL_PENDING",
+    );
+    const monthlyRecurringRevenueCents = activeSubscriptions.reduce(
+      (total, subscription) => {
+        const monthlyAmount =
+          subscription.billingInterval === "YEARLY"
+            ? Math.round(subscription.amountCents / 12)
+            : subscription.amountCents;
+        return total + monthlyAmount;
+      },
+      0,
+    );
+
+    const productSummaries = sellerProducts.map((product) => {
+      const productSubscriptions = subscriptions.filter(
+        (subscription) => subscription.productId === product.id,
+      );
+      const activeCount = productSubscriptions.filter(
+        (subscription) =>
+          subscription.status === "ACTIVE" ||
+          subscription.status === "PENDING" ||
+          subscription.status === "CHANGE_PENDING",
+      ).length;
+      const canceledCount = productSubscriptions.length - activeCount;
+      const monthlyRevenueCents = productSubscriptions.reduce(
+        (total, subscription) => {
+          if (
+            subscription.status !== "ACTIVE" &&
+            subscription.status !== "PENDING" &&
+            subscription.status !== "CHANGE_PENDING"
+          ) {
+            return total;
+          }
+
+          const monthlyAmount =
+            subscription.billingInterval === "YEARLY"
+              ? Math.round(subscription.amountCents / 12)
+              : subscription.amountCents;
+          return total + monthlyAmount;
+        },
+        0,
+      );
+
+      return {
+        id: product.id,
+        name: product.name,
+        slug: product.slug,
+        status: product.status,
+        activeCount,
+        canceledCount,
+        monthlyRevenueCents,
+      };
+    });
+
+    return res.status(200).json({
+      success: true,
+      summary: {
+        productsCount: sellerProducts.length,
+        totalSubscriptions: subscriptions.length,
+        activeSubscriptions: activeSubscriptions.length,
+        canceledSubscriptions: canceledSubscriptions.length,
+        monthlyRecurringRevenueCents,
+      },
+      products: productSummaries,
+      subscriptions,
+    });
+  },
+);
+
 export {
   updateStatusOfSeller,
   createSellerRequest,
   getSellerStatus,
+  getSellerSubscriptionSummary,
   getSellerEarningsSummary,
   getSellerTransactions,
   requestPayout,

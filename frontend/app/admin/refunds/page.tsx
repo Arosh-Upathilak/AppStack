@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "react-toastify";
-import Icon from "@/components/Icon";
 import {
   getPendingRefunds,
   decideRefund,
@@ -30,7 +29,11 @@ export default function AdminPendingRefundsPage() {
   }
 
   useEffect(() => {
-    void reload();
+    const timeout = window.setTimeout(() => {
+      void reload();
+    }, 0);
+
+    return () => window.clearTimeout(timeout);
   }, []);
 
   async function handleApprove(refundId: string) {
@@ -113,7 +116,7 @@ export default function AdminPendingRefundsPage() {
                       <div className="muted" style={{ fontSize: 12 }}>{item.invoice?.description}</div>
                     </td>
                     <td style={{ fontSize: 13, color: "var(--ink-2)", maxWidth: 200, wordBreak: "break-word" }}>
-                      "{item.reason}"
+                      &quot;{item.reason}&quot;
                       <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>Requested {new Date(item.createdAt).toLocaleDateString()}</div>
                     </td>
                     <td>

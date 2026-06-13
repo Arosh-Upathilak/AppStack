@@ -135,3 +135,67 @@ export async function requestPayout(amountCents: number, payoutEmail?: string) {
     { headers, withCredentials: true }
   );
 }
+
+export interface SellerSubscriptionSummary {
+  productsCount: number;
+  totalSubscriptions: number;
+  activeSubscriptions: number;
+  canceledSubscriptions: number;
+  monthlyRecurringRevenueCents: number;
+}
+
+export interface SellerProductSubscriptionSummary {
+  id: string;
+  name: string;
+  slug: string;
+  status: string;
+  activeCount: number;
+  canceledCount: number;
+  monthlyRevenueCents: number;
+}
+
+export interface SellerSubscriptionRow {
+  id: string;
+  productId: string;
+  productName: string;
+  productSlug: string;
+  planId: string;
+  planName: string;
+  planIdentifier: string;
+  status: string;
+  seats: number;
+  amountCents: number;
+  currency: string;
+  billingInterval: "MONTHLY" | "YEARLY";
+  currentPeriodStart: string;
+  currentPeriodEnd: string;
+  nextBillingAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GetSellerSubscriptionsResponse {
+  success: boolean;
+  summary: SellerSubscriptionSummary;
+  products: SellerProductSubscriptionSummary[];
+  subscriptions: SellerSubscriptionRow[];
+}
+
+export async function getSellerSubscriptions(
+  productId?: string,
+  status?: string,
+): Promise<GetSellerSubscriptionsResponse> {
+  const headers = await userAuthorization();
+  const response = await axios.get<GetSellerSubscriptionsResponse>(
+    `${API_BASE}/seller/subscriptions`,
+    {
+      headers,
+      withCredentials: true,
+      params: {
+        ...(productId ? { productId } : {}),
+        ...(status ? { status } : {}),
+      },
+    },
+  );
+  return response.data;
+}

@@ -2,6 +2,7 @@ import express from "express";
 import {
   listSellerWebhookEvents,
   retryWebhookEvent,
+  sendTestWebhookEvent,
 } from "../controllers/webhookController";
 import { authMiddleware, authMiddlewareRequireRole } from "../middleware/authMiddleware";
 
@@ -12,6 +13,13 @@ webhookRouter.get(
   authMiddleware,
   authMiddlewareRequireRole("SELLER"),
   listSellerWebhookEvents
+);
+
+webhookRouter.post(
+  "/products/:productId/test",
+  authMiddleware,
+  authMiddlewareRequireRole("SELLER"),
+  sendTestWebhookEvent
 );
 
 webhookRouter.post(

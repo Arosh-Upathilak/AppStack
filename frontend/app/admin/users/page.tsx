@@ -1,11 +1,14 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import Icon from "@/components/Icon";
 import { toast } from "react-toastify";
 import { getUsers, updateUserRole, deleteUserGDPR } from "@/lib/api/admin";
 import type { UserAdmin } from "@/lib/api/admin";
 import { getErrorMessage } from "@/lib/api/errors";
+
+type UserRole = UserAdmin["roles"][number];
+const ROLE_OPTIONS: UserRole[] = ["BUYER", "SELLER", "ADMIN"];
 
 export default function AdminUsersPage() {
   const [users, setUsers] = useState<UserAdmin[]>([]);
@@ -17,10 +20,10 @@ export default function AdminUsersPage() {
 
   // Role Edit Modal State
   const [editingUser, setEditingUser] = useState<UserAdmin | null>(null);
-  const [selectedRoles, setSelectedRoles] = useState<("BUYER" | "SELLER" | "ADMIN")[]>([]);
+  const [selectedRoles, setSelectedRoles] = useState<UserRole[]>([]);
   const [submitting, setSubmitting] = useState(false);
 
-  const loadUsers = async (pageNum = 1) => {
+  const loadUsers = useCallback(async (pageNum = 1) => {
     try {
       setLoading(true);
       const data = await getUsers(pageNum, 10, search, roleFilter);
@@ -32,14 +35,14 @@ export default function AdminUsersPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [roleFilter, search]);
 
   useEffect(() => {
-    const timeout = setTimeout(() => {
-      loadUsers(1);
+    const timeout = window.setTimeout(() => {
+      void loadUsers(1);
     }, 300); // Debounce search
-    return () => clearTimeout(timeout);
-  }, [search, roleFilter]);
+    return () => window.clearTimeout(timeout);
+  }, [loadUsers]);
 
   const handleOpenEditRoles = (user: UserAdmin) => {
     setEditingUser(user);
@@ -51,7 +54,7 @@ export default function AdminUsersPage() {
     setSelectedRoles([]);
   };
 
-  const handleToggleRole = (role: "BUYER" | "SELLER" | "ADMIN") => {
+  const handleToggleRole = (role: UserRole) => {
     if (selectedRoles.includes(role)) {
       setSelectedRoles(selectedRoles.filter((r) => r !== role));
     } else {
@@ -315,8 +318,8 @@ export default function AdminUsersPage() {
               </div>
 
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                {["BUYER", "SELLER", "ADMIN"].map((role) => {
-                  const isChecked = selectedRoles.includes(role as any);
+                {ROLE_OPTIONS.map((role) => {
+                  const isChecked = selectedRoles.includes(role);
                   return (
                     <label
                       key={role}
@@ -338,7 +341,7 @@ export default function AdminUsersPage() {
                       <input
                         type="checkbox"
                         checked={isChecked}
-                        onChange={() => handleToggleRole(role as any)}
+                        onChange={() => handleToggleRole(role)}
                         style={{ width: 16, height: 16 }}
                       />
                       <span>{role}</span>

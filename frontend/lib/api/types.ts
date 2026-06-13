@@ -94,6 +94,9 @@ export interface Subscription {
   recipientEmail: string;
   seats: number;
   status: SubscriptionStatus;
+  canceledAt?: string | null;
+  adminCancellationApprovedAt?: string | null;
+  integrationStatusMessage?: string | null;
   currentPeriodStart: string;
   currentPeriodEnd: string;
   nextBillingAt: string;
@@ -135,8 +138,11 @@ export interface WebhookEvent {
   eventType: string;
   payload: string;
   status: "PENDING" | "DELIVERED" | "FAILED";
+  mode: "LIVE" | "TEST";
   attempts: number;
   lastAttempt?: string | null;
+  nextAttemptAt?: string | null;
+  deliveredAt?: string | null;
   responseCode?: number | null;
   responseBody?: string | null;
   createdAt: string;

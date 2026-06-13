@@ -6,6 +6,7 @@ import {
   getSellerEarningsSummary,
   getSellerTransactions,
   requestPayout,
+  getSellerSubscriptionSummary,
 } from "../controllers/sellerController";
 import {
   createSellerProduct,
@@ -25,6 +26,7 @@ sellerRouter.get("/products", authMiddleware, authMiddlewareRequireRole("SELLER"
 sellerRouter.post("/products", authMiddleware, authMiddlewareRequireRole("SELLER"), createSellerProduct);
 sellerRouter.put("/products/:productId", authMiddleware, authMiddlewareRequireRole("SELLER"), updateSellerProduct);
 sellerRouter.post("/products/:productId/submit", authMiddleware, authMiddlewareRequireRole("SELLER"), submitSellerProduct);
+sellerRouter.get("/subscriptions", authMiddleware, authMiddlewareRequireRole("SELLER"), getSellerSubscriptionSummary);
 
 // Earnings & Payouts
 sellerRouter.get("/earnings/summary", authMiddleware, authMiddlewareRequireRole("SELLER"), getSellerEarningsSummary);

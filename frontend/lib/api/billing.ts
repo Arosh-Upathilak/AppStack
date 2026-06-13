@@ -70,7 +70,7 @@ export async function createSubscription(input: CreateSubscriptionInput) {
   const headers = await userAuthorization();
   const res = await axios.post<{
     subscription: Subscription;
-    invoice: Invoice;
+    invoice: Invoice | null;
     consent: Consent;
   }>(`${API_BASE}/subscriptions`, input, {
     headers,

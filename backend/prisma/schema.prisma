@@ -155,6 +155,8 @@ model Subscription {
   nextBillingAt      DateTime
   canceledAt         DateTime?
   pendingPlanId      String?
+  adminCancellationApprovedAt DateTime?
+  integrationStatusMessage String?          @db.Text
   invoices           Invoice[]
   consents           Consent[]
   refundRequests     RefundRequest[]
@@ -166,6 +168,7 @@ model Subscription {
   @@index([planId])
   @@index([status])
   @@index([nextBillingAt])
+  @@index([adminCancellationApprovedAt])
 }
 
 model Invoice {
@@ -327,9 +330,12 @@ model WebhookEvent {
   product      Product            @relation(fields: [productId], references: [id], onDelete: Cascade)
   eventType    String
   payload      String             @db.Text
+  mode         WebhookEventMode   @default(LIVE) @map("eventMode")
   status       WebhookEventStatus @default(PENDING)
   attempts     Int                @default(0)
   lastAttempt  DateTime?
+  nextAttemptAt DateTime?
+  deliveredAt  DateTime?
   responseCode Int?
   responseBody String?            @db.Text
   createdAt    DateTime           @default(now())
@@ -337,12 +343,20 @@ model WebhookEvent {
 
   @@index([productId])
   @@index([status])
+  @@index([eventType])
+  @@index([mode])
+  @@index([nextAttemptAt])
 }
 
 enum WebhookEventStatus {
   PENDING
   DELIVERED
   FAILED
+}
+
+enum WebhookEventMode {
+  LIVE
+  TEST
 }
 
 model RefundRequest {

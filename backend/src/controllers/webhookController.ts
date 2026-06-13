@@ -1,52 +1,15 @@
 import { Request, Response } from "express";
 import { asyncHandler, AppError } from "../utils/errorHandler";
 import prisma from "../utils/prisma";
-import crypto from "crypto";
-import axios from "axios";
-import { generateWebhookSignature } from "../services/webhookWorker";
-
-// Helper to deliver in background
-async function deliverWebhookBackground(eventId: string, webhookUrl: string, payload: string, signature: string) {
-  try {
-    const response = await axios.post(webhookUrl, payload, {
-      headers: {
-        "Content-Type": "application/json",
-        "X-AppStack-Signature": signature,
-        "X-AppStack-Event-Id": eventId,
-      },
-      timeout: 10000,
-    });
-    await prisma.webhookEvent.update({
-      where: { id: eventId },
-      data: {
-        status: "DELIVERED",
-        lastAttempt: new Date(),
-        responseCode: response.status,
-        responseBody: JSON.stringify(response.data).substring(0, 2000),
-      },
-    });
-  } catch (error: any) {
-    const responseCode = error.response?.status || null;
-    const responseBody = error.response?.data
-      ? JSON.stringify(error.response.data).substring(0, 2000)
-      : error.message || "Retry failed";
-
-    await prisma.webhookEvent.update({
-      where: { id: eventId },
-      data: {
-        status: "FAILED",
-        lastAttempt: new Date(),
-        responseCode,
-        responseBody,
-      },
-    });
-  }
-}
+import { deliverWebhookEvent, sendWebhookEvent } from "../services/webhookWorker";
 
 export const listSellerWebhookEvents = asyncHandler(
   async (req: Request, res: Response) => {
     const userId = (req as any).user.id;
     const productId = String(req.params.productId);
+    const status = typeof req.query.status === "string" ? req.query.status : undefined;
+    const eventType = typeof req.query.eventType === "string" ? req.query.eventType : undefined;
+    const mode = typeof req.query.mode === "string" ? req.query.mode : undefined;
 
     // Verify product belongs to seller
     const product = await prisma.product.findFirst({
@@ -63,6 +26,9 @@ export const listSellerWebhookEvents = asyncHandler(
     const events = await prisma.webhookEvent.findMany({
       where: {
         productId,
+        ...(status ? { status: status as any } : {}),
+        ...(eventType ? { eventType } : {}),
+        ...(mode ? { mode: mode as any } : {}),
       },
       orderBy: {
         createdAt: "desc",
@@ -75,6 +41,60 @@ export const listSellerWebhookEvents = asyncHandler(
       events,
     });
   }
+);
+
+export const sendTestWebhookEvent = asyncHandler(
+  async (req: Request, res: Response) => {
+    const userId = (req as any).user.id;
+    const productId = String(req.params.productId);
+
+    const product = await prisma.product.findFirst({
+      where: {
+        id: productId,
+        sellerId: userId,
+      },
+    });
+
+    if (!product) {
+      throw new AppError("Product not found or unauthorized", 404);
+    }
+
+    if (!product.webhookUrl) {
+      throw new AppError("Configure a webhook URL before sending a test event", 400);
+    }
+
+    const eventId = await sendWebhookEvent(
+      product.id,
+      "webhook.test",
+      {
+        productId: product.id,
+        productName: product.name,
+        message: "This is a test event from AppStack.",
+      },
+      {
+        mode: "TEST",
+        deliverImmediately: false,
+      },
+    );
+
+    const event = await deliverWebhookEvent(eventId, true);
+
+    if (event.status === "DELIVERED") {
+      await prisma.product.update({
+        where: { id: product.id },
+        data: { webhookTested: true },
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message:
+        event.status === "DELIVERED"
+          ? "Webhook test delivered successfully"
+          : "Webhook test created but delivery did not succeed",
+      event,
+    });
+  },
 );
 
 export const retryWebhookEvent = asyncHandler(
@@ -103,20 +123,7 @@ export const retryWebhookEvent = asyncHandler(
       throw new AppError("Product does not have a webhook URL configured", 400);
     }
 
-    const secret = event.product.webhookSecret || "default_secret";
-    const signature = generateWebhookSignature(event.payload, secret);
-
-    // Update attempts
-    const updatedEvent = await prisma.webhookEvent.update({
-      where: { id: eventId },
-      data: {
-        status: "PENDING",
-        attempts: { increment: 1 },
-      },
-    });
-
-    // Asynchronous dispatch
-    void deliverWebhookBackground(event.id, event.product.webhookUrl, event.payload, signature);
+    const updatedEvent = await deliverWebhookEvent(event.id, true);
 
     return res.status(200).json({
       success: true,
@@ -128,7 +135,16 @@ export const retryWebhookEvent = asyncHandler(
 
 export const listAdminWebhookEvents = asyncHandler(
   async (req: Request, res: Response) => {
+    const status = typeof req.query.status === "string" ? req.query.status : undefined;
+    const eventType = typeof req.query.eventType === "string" ? req.query.eventType : undefined;
+    const mode = typeof req.query.mode === "string" ? req.query.mode : undefined;
+
     const events = await prisma.webhookEvent.findMany({
+      where: {
+        ...(status ? { status: status as any } : {}),
+        ...(eventType ? { eventType } : {}),
+        ...(mode ? { mode: mode as any } : {}),
+      },
       include: {
         product: {
           select: {

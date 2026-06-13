@@ -23,6 +23,8 @@ interface NavItem {
 const sellerNav: NavItem[] = [
   { href: "/seller", label: "Overview", icon: "home", exact: true },
   { href: "/seller/products", label: "Products", icon: "package" },
+  { href: "/seller/subscriptions", label: "Subscriptions", icon: "receipt" },
+  { href: "/seller/integrations", label: "Integrations", icon: "link" },
   { href: "/seller/earnings", label: "Earnings & Payouts", icon: "wallet" },
   { href: "/seller/settings", label: "Settings", icon: "settings" },
 ];
@@ -213,10 +215,10 @@ export default function Sidebar({ role }: SidebarProps) {
 
       <div className="sb-spacer" />
 
-      <div className="sb-link" style={{ color: "var(--ink-3)" }}>
+      <Link href="/docs/integrations" className="sb-link" style={{ color: "var(--ink-3)" }}>
         <Icon name="help" size={14} />
         <span>Help &amp; docs</span>
-      </div>
+      </Link>
 
       <div ref={accountRef} style={{ position: "relative" }}>
         {accountOpen && (

@@ -1,69 +1,318 @@
+import crypto from "crypto";
 import { Request, Response } from "express";
 import { asyncHandler, AppError } from "../utils/errorHandler";
 import prisma from "../utils/prisma";
 import { sendNotification } from "../socket/socketConnect";
 
+type AckAction = "activate" | "change_applied" | "cancel_applied";
+
+function invoiceNumber() {
+  return `INV-${new Date().getFullYear()}-${crypto
+    .randomBytes(4)
+    .toString("hex")
+    .toUpperCase()}`;
+}
+
+function authSecret(req: Request) {
+  const authHeader = req.headers["authorization"] || req.headers["x-appstack-secret"];
+
+  if (!authHeader) {
+    throw new AppError("Authorization header is required", 401);
+  }
+
+  return typeof authHeader === "string" && authHeader.startsWith("Bearer ")
+    ? authHeader.substring(7)
+    : String(authHeader);
+}
+
+function ensureAction(value: unknown): AckAction {
+  if (
+    value === "activate" ||
+    value === "change_applied" ||
+    value === "cancel_applied"
+  ) {
+    return value;
+  }
+  throw new AppError("action must be activate, change_applied, or cancel_applied", 400);
+}
+
+async function createSettlementIfMissing(tx: any, subscription: any, paidAt: Date) {
+  const existing = await tx.invoice.findFirst({
+    where: {
+      subscriptionId: subscription.id,
+      status: "PAID",
+    },
+  });
+
+  if (existing) {
+    return existing;
+  }
+
+  const amountCents = subscription.plan.priceCents * subscription.seats;
+  const invoice = await tx.invoice.create({
+    data: {
+      number: invoiceNumber(),
+      buyerId: subscription.buyerId,
+      subscriptionId: subscription.id,
+      productId: subscription.productId,
+      planId: subscription.planId,
+      amountCents,
+      currency: subscription.plan.currency,
+      status: "PAID",
+      description: `SaaS Activation: ${subscription.product.name} - ${subscription.plan.name} (${subscription.seats} seat${subscription.seats === 1 ? "" : "s"})`,
+      paidAt,
+    },
+  });
+
+  await tx.transaction.create({
+    data: {
+      sellerId: subscription.product.sellerId,
+      amountCents,
+      type: "SALE",
+      status: "LOCKED",
+      description: `Sale: ${subscription.product.name} - ${subscription.plan.name} (${subscription.seats} seat${subscription.seats === 1 ? "" : "s"})`,
+      invoiceId: invoice.id,
+    },
+  });
+
+  return invoice;
+}
+
+async function notifyLifecycle(subscription: any, title: string, message: string) {
+  const buyerNotification = await prisma.notification.create({
+    data: {
+      userId: subscription.buyerId,
+      title,
+      message,
+      type: "ORDER_UPDATE",
+      priority: "HIGH",
+    },
+  });
+  sendNotification(subscription.buyerId, buyerNotification);
+
+  const sellerNotification = await prisma.notification.create({
+    data: {
+      userId: subscription.product.sellerId,
+      title,
+      message,
+      type: "ORDER_UPDATE",
+      priority: "NORMAL",
+    },
+  });
+  sendNotification(subscription.product.sellerId, sellerNotification);
+}
+
+async function handleAcknowledgement(
+  subscriptionId: string,
+  secret: string,
+  body: {
+    eventId?: string;
+    action?: string;
+    accepted?: boolean;
+    message?: string;
+  },
+) {
+  const action = ensureAction(body.action);
+  const accepted = Boolean(body.accepted);
+  const message = body.message?.trim() || null;
+
+  const subscription = await prisma.subscription.findUnique({
+    where: { id: subscriptionId },
+    include: { product: true, plan: true },
+  });
+
+  if (!subscription) {
+    throw new AppError("Subscription not found", 404);
+  }
+
+  if (!subscription.product.webhookSecret || subscription.product.webhookSecret !== secret) {
+    throw new AppError("Invalid API Secret / Webhook Secret", 403);
+  }
+
+  if (body.eventId) {
+    const event = await prisma.webhookEvent.findFirst({
+      where: {
+        id: body.eventId,
+        productId: subscription.productId,
+      },
+    });
+
+    if (!event) {
+      throw new AppError("eventId does not match this product", 400);
+    }
+  }
+
+  if (!accepted) {
+    const integrationStatusMessage = message ?? "Seller SaaS rejected the requested lifecycle action.";
+    let data: any = { integrationStatusMessage };
+
+    if (action === "change_applied") {
+      data = {
+        status: "ACTIVE",
+        pendingPlanId: null,
+        integrationStatusMessage,
+      };
+    }
+
+    if (action === "cancel_applied") {
+      data = {
+        status: "ACTIVE",
+        canceledAt: null,
+        adminCancellationApprovedAt: null,
+        integrationStatusMessage,
+      };
+    }
+
+    const updated = await prisma.subscription.update({
+      where: { id: subscription.id },
+      data,
+      include: { product: true, plan: true },
+    });
+
+    await notifyLifecycle(
+      subscription,
+      "SaaS Integration Rejected Request",
+      `${subscription.product.name} rejected ${action}. ${integrationStatusMessage}`,
+    );
+
+    return updated;
+  }
+
+  if (action === "activate") {
+    if (subscription.status !== "PENDING") {
+      throw new AppError("Subscription is not pending activation", 400);
+    }
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const activated = await tx.subscription.update({
+        where: { id: subscription.id },
+        data: {
+          status: "ACTIVE",
+          integrationStatusMessage: null,
+        },
+        include: { product: true, plan: true },
+      });
+
+      await createSettlementIfMissing(tx, activated, new Date());
+      return activated;
+    });
+
+    await notifyLifecycle(
+      updated,
+      "Subscription Activated",
+      `${updated.product.name} has confirmed your subscription activation.`,
+    );
+
+    return updated;
+  }
+
+  if (action === "change_applied") {
+    if (subscription.status !== "CHANGE_PENDING" || !subscription.pendingPlanId) {
+      throw new AppError("Subscription is not pending a plan change", 400);
+    }
+
+    const updated = await prisma.subscription.update({
+      where: { id: subscription.id },
+      data: {
+        status: "ACTIVE",
+        planId: subscription.pendingPlanId,
+        pendingPlanId: null,
+        integrationStatusMessage: null,
+      },
+      include: { product: true, plan: true },
+    });
+
+    await notifyLifecycle(
+      updated,
+      "Subscription Plan Changed",
+      `${updated.product.name} confirmed your plan change to ${updated.plan.name}.`,
+    );
+
+    return updated;
+  }
+
+  if (subscription.status !== "CANCEL_PENDING") {
+    throw new AppError("Subscription is not pending cancellation", 400);
+  }
+
+  const updated = await prisma.subscription.update({
+    where: { id: subscription.id },
+    data: {
+      status: "CANCELED",
+      canceledAt: new Date(),
+      integrationStatusMessage: null,
+    },
+    include: { product: true, plan: true },
+  });
+
+  await notifyLifecycle(
+    updated,
+    "Subscription Canceled",
+    `${updated.product.name} confirmed your subscription cancellation.`,
+  );
+
+  return updated;
+}
+
+export const acknowledgeSubscriptionLifecycle = asyncHandler(
+  async (req: Request, res: Response) => {
+    const subscriptionId = String(req.params.subscriptionId);
+    const updated = await handleAcknowledgement(subscriptionId, authSecret(req), req.body);
+
+    return res.status(200).json({
+      success: true,
+      message: "Subscription acknowledgement processed",
+      subscriptionId,
+      status: updated.status,
+      subscription: updated,
+    });
+  },
+);
+
 export const updateSubscriptionStatusFromSaaS = asyncHandler(
   async (req: Request, res: Response) => {
     const subscriptionId = String(req.params.subscriptionId);
-    const { status } = req.body as { status?: string };
-    const authHeader = req.headers["authorization"] || req.headers["x-appstack-secret"];
-
-    if (!authHeader) {
-      throw new AppError("Authorization header is required", 401);
-    }
-
-    const secret = typeof authHeader === "string" && authHeader.startsWith("Bearer ")
-      ? authHeader.substring(7)
-      : String(authHeader);
+    const { status, eventId, message } = req.body as {
+      status?: string;
+      eventId?: string;
+      message?: string;
+    };
 
     const subscription = await prisma.subscription.findUnique({
       where: { id: subscriptionId },
-      include: { product: true },
+      select: { status: true, pendingPlanId: true },
     });
 
     if (!subscription) {
       throw new AppError("Subscription not found", 404);
     }
 
-    if (!subscription.product.webhookSecret || subscription.product.webhookSecret !== secret) {
-      throw new AppError("Invalid API Secret / Webhook Secret", 403);
+    const action =
+      status === "ACTIVE" && subscription.status === "CHANGE_PENDING" && subscription.pendingPlanId
+        ? "change_applied"
+        : status === "ACTIVE"
+          ? "activate"
+          : status === "CANCELED"
+            ? "cancel_applied"
+            : undefined;
+
+    if (!action) {
+      throw new AppError("Compatibility status endpoint only supports ACTIVE or CANCELED. Use /ack for other lifecycle actions.", 400);
     }
 
-    const validStatuses = ["PENDING", "ACTIVE", "CHANGE_PENDING", "CANCEL_PENDING", "CANCELED"];
-    if (!status || !validStatuses.includes(status)) {
-      throw new AppError(`Invalid status. Must be one of: ${validStatuses.join(", ")}`, 400);
-    }
-
-    const nextPlanId = subscription.pendingPlanId && status === "ACTIVE"
-      ? subscription.pendingPlanId
-      : undefined;
-
-    const updated = await prisma.subscription.update({
-      where: { id: subscriptionId },
-      data: {
-        status: status as any,
-        ...(nextPlanId ? { planId: nextPlanId, pendingPlanId: null } : {}),
-        ...(status === "CANCELED" ? { canceledAt: new Date() } : {}),
-      },
+    const updated = await handleAcknowledgement(subscriptionId, authSecret(req), {
+      eventId,
+      action,
+      accepted: true,
+      message,
     });
-
-    const notification = await prisma.notification.create({
-      data: {
-        userId: subscription.buyerId,
-        title: `Subscription Status Updated`,
-        message: `Your subscription status for ${subscription.product.name} is now ${status}.`,
-        type: "ORDER_UPDATE",
-        priority: "HIGH",
-      },
-    });
-    sendNotification(subscription.buyerId, notification);
 
     return res.status(200).json({
       success: true,
-      message: `Subscription status updated to ${status}`,
+      message: `Subscription status updated to ${updated.status}`,
       subscriptionId,
       status: updated.status,
+      subscription: updated,
     });
-  }
+  },
 );

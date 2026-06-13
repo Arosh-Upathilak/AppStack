@@ -45,6 +45,9 @@ function serializeSubscription(subscription: any) {
     recipientEmail: subscription.recipientEmail,
     seats: subscription.seats,
     status: subscription.status,
+    canceledAt: subscription.canceledAt,
+    adminCancellationApprovedAt: subscription.adminCancellationApprovedAt,
+    integrationStatusMessage: subscription.integrationStatusMessage,
     currentPeriodStart: subscription.currentPeriodStart,
     currentPeriodEnd: subscription.currentPeriodEnd,
     nextBillingAt: subscription.nextBillingAt,
@@ -59,6 +62,64 @@ function serializeSubscription(subscription: any) {
     createdAt: subscription.createdAt,
     updatedAt: subscription.updatedAt,
   };
+}
+
+async function settleSubscriptionPayment(client: any, args: {
+  buyerId: string;
+  subscriptionId: string;
+  product: any;
+  plan: any;
+  seats: number;
+  paidAt: Date;
+  descriptionPrefix?: string;
+}) {
+  const existingInvoice = await client.invoice.findFirst({
+    where: {
+      subscriptionId: args.subscriptionId,
+      status: "PAID",
+    },
+    include: {
+      product: true,
+      plan: true,
+    },
+  });
+
+  if (existingInvoice) {
+    return { invoice: existingInvoice, transaction: null };
+  }
+
+  const amountCents = args.plan.priceCents * args.seats;
+  const invoice = await client.invoice.create({
+    data: {
+      number: invoiceNumber(),
+      buyerId: args.buyerId,
+      subscriptionId: args.subscriptionId,
+      productId: args.product.id,
+      planId: args.plan.id,
+      amountCents,
+      currency: args.plan.currency,
+      status: "PAID",
+      description: `${args.descriptionPrefix ?? "Sale"}: ${args.product.name} - ${args.plan.name} (${args.seats} seat${args.seats === 1 ? "" : "s"})`,
+      paidAt: args.paidAt,
+    },
+    include: {
+      product: true,
+      plan: true,
+    },
+  });
+
+  const transaction = await client.transaction.create({
+    data: {
+      sellerId: args.product.sellerId,
+      amountCents,
+      type: "SALE",
+      status: "LOCKED",
+      description: `Sale: ${args.product.name} - ${args.plan.name} (${args.seats} seat${args.seats === 1 ? "" : "s"})`,
+      invoiceId: invoice.id,
+    },
+  });
+
+  return { invoice, transaction };
 }
 
 function serializeInvoice(invoice: any) {
@@ -154,7 +215,7 @@ export const createSubscription = asyncHandler(
 
     const now = new Date();
     const periodEnd = addBillingPeriod(now, plan.billingInterval);
-    const amountCents = plan.priceCents * seatCount;
+    const requiresSaasActivation = Boolean(product.webhookUrl);
 
     const result = await prisma.$transaction(async (tx) => {
       const subscription = await tx.subscription.create({
@@ -165,33 +226,15 @@ export const createSubscription = asyncHandler(
           paymentMethodId: method.id,
           recipientEmail: recipientEmail.toLowerCase(),
           seats: seatCount,
-          status: "PENDING",
+          status: requiresSaasActivation ? "PENDING" : "ACTIVE",
+          integrationStatusMessage: requiresSaasActivation
+            ? "Waiting for seller SaaS activation acknowledgement."
+            : null,
           currentPeriodStart: now,
           currentPeriodEnd: periodEnd,
           nextBillingAt: periodEnd,
         },
         include: includeSubscription,
-      });
-
-      const invoice = await tx.invoice.create({
-        data: {
-          number: invoiceNumber(),
-          buyerId,
-          subscriptionId: subscription.id,
-          productId: product.id,
-          planId: plan.id,
-          amountCents,
-          currency: plan.currency,
-          status: "PAID",
-          description: `${product.name} - ${plan.name} (${seatCount} seat${
-            seatCount === 1 ? "" : "s"
-          })`,
-          paidAt: now,
-        },
-        include: {
-          product: true,
-          plan: true,
-        },
       });
 
       const consent = await tx.consent.create({
@@ -207,25 +250,27 @@ export const createSubscription = asyncHandler(
         },
       });
 
-      const transaction = await tx.transaction.create({
-        data: {
-          sellerId: product.sellerId,
-          amountCents,
-          type: "SALE",
-          status: "LOCKED",
-          description: `Sale: ${product.name} - ${plan.name} (${seatCount} seat${seatCount === 1 ? "" : "s"})`,
-          invoiceId: invoice.id,
-        },
-      });
+      const settlement = requiresSaasActivation
+        ? { invoice: null, transaction: null }
+        : await settleSubscriptionPayment(tx, {
+            buyerId,
+            subscriptionId: subscription.id,
+            product,
+            plan,
+            seats: seatCount,
+            paidAt: now,
+          });
 
-      return { subscription, invoice, consent, transaction };
+      return { subscription, invoice: settlement.invoice, consent, transaction: settlement.transaction };
     });
 
     const buyerNotification = await prisma.notification.create({
       data: {
         userId: buyerId,
-        title: "Subscription Created",
-        message: `Your ${product.name} subscription is pending activation by the SaaS platform.`,
+        title: requiresSaasActivation ? "Subscription Pending Activation" : "Subscription Active",
+        message: requiresSaasActivation
+          ? `Your ${product.name} subscription is pending activation by the SaaS platform.`
+          : `Your ${product.name} subscription is active.`,
         type: "SUBSCRIPTION_CREATED",
         priority: "NORMAL",
       },
@@ -235,8 +280,10 @@ export const createSubscription = asyncHandler(
     const sellerNotification = await prisma.notification.create({
       data: {
         userId: product.sellerId,
-        title: "New Subscription Pending",
-        message: `${product.name} received a new subscription. Webhook dispatched. Buyer PII is limited to the consented recipient email.`,
+        title: requiresSaasActivation ? "New Subscription Pending" : "New Subscription Active",
+        message: requiresSaasActivation
+          ? `${product.name} received a new subscription. Webhook dispatched. Buyer PII is limited to the consented recipient email.`
+          : `${product.name} received a new active subscription.`,
         type: "SUBSCRIPTION_CREATED",
         priority: "NORMAL",
       },
@@ -255,9 +302,11 @@ export const createSubscription = asyncHandler(
 
     return res.status(201).json({
       success: true,
-      message: "Subscription created",
+      message: requiresSaasActivation
+        ? "Subscription created and pending SaaS activation"
+        : "Subscription created",
       subscription: serializeSubscription(result.subscription),
-      invoice: serializeInvoice(result.invoice),
+      invoice: result.invoice ? serializeInvoice(result.invoice) : null,
       consent: result.consent,
     });
   },
@@ -446,6 +495,7 @@ export const listPendingCancellations = asyncHandler(
     const cancellations = await prisma.subscription.findMany({
       where: {
         status: "CANCEL_PENDING",
+        adminCancellationApprovedAt: null,
       },
       include: {
         buyer: {
@@ -497,11 +547,57 @@ export const decideCancellation = asyncHandler(
     }
 
     if (decision === "APPROVE") {
+      if (subscription.product.webhookUrl) {
+        const updated = await prisma.subscription.update({
+          where: { id: subscriptionId },
+          data: {
+            adminCancellationApprovedAt: new Date(),
+            integrationStatusMessage: "Cancellation approved by admin. Waiting for seller SaaS cancellation acknowledgement.",
+          },
+        });
+
+        await sendWebhookEvent(subscription.productId, "subscription.canceled", {
+          subscriptionId: subscription.id,
+          buyerEmail: subscription.recipientEmail,
+          planIdentifier: subscription.plan.identifier,
+        });
+
+        const buyerNotif = await prisma.notification.create({
+          data: {
+            userId: subscription.buyerId,
+            title: "Cancellation Approved",
+            message: `Your cancellation request for ${subscription.product.name} was approved and is waiting for SaaS confirmation.`,
+            type: "ORDER_UPDATE",
+            priority: "HIGH",
+          },
+        });
+        sendNotification(subscription.buyerId, buyerNotif);
+
+        const sellerNotif = await prisma.notification.create({
+          data: {
+            userId: subscription.product.sellerId,
+            title: "Cancellation Pending SaaS Confirmation",
+            message: `A cancellation for ${subscription.product.name} was approved. Confirm cancellation through the integration acknowledgement API.`,
+            type: "ORDER_UPDATE",
+            priority: "NORMAL",
+          },
+        });
+        sendNotification(subscription.product.sellerId, sellerNotif);
+
+        return res.status(200).json({
+          success: true,
+          message: "Cancellation approved and pending SaaS confirmation.",
+          subscription: updated,
+        });
+      }
+
       const updated = await prisma.subscription.update({
         where: { id: subscriptionId },
         data: {
           status: "CANCELED",
           canceledAt: new Date(),
+          adminCancellationApprovedAt: new Date(),
+          integrationStatusMessage: null,
         },
       });
 
@@ -548,6 +644,8 @@ export const decideCancellation = asyncHandler(
         data: {
           status: "ACTIVE",
           canceledAt: null,
+          adminCancellationApprovedAt: null,
+          integrationStatusMessage: null,
         },
       });
 

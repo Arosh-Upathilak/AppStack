@@ -21,10 +21,12 @@ export default function InvoiceList() {
   const [selectedRefundInvoice, setSelectedRefundInvoice] = useState<Invoice | null>(null);
   const [refundReason, setRefundReason] = useState('');
   const [busy, setBusy] = useState(false);
+  const [currentTime, setCurrentTime] = useState<number | null>(null);
 
   function isRefundable(invoice: Invoice) {
+    if (currentTime === null) return false;
     if (invoice.status !== 'PAID') return false;
-    const ageMs = Date.now() - new Date(invoice.issuedAt).getTime();
+    const ageMs = currentTime - new Date(invoice.issuedAt).getTime();
     const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
     return ageMs <= thirtyDaysMs;
   }
@@ -42,7 +44,12 @@ export default function InvoiceList() {
   }
 
   useEffect(() => {
-    void reload();
+    const timeout = window.setTimeout(() => {
+      setCurrentTime(Date.now());
+      void reload();
+    }, 0);
+
+    return () => window.clearTimeout(timeout);
   }, []);
 
   async function handleDownload(invoice: Invoice) {

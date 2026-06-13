@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "react-toastify";
 import Icon from "@/components/Icon";
 import {
@@ -240,7 +240,7 @@ function WebhookModal({ product, onClose }: { product: Product; onClose: () => v
   const [loading, setLoading] = useState(true);
   const [retryingId, setRetryingId] = useState<string | null>(null);
 
-  async function loadEvents() {
+  const loadEvents = useCallback(async () => {
     try {
       setLoading(true);
       const list = await listProductWebhookEvents(product.id);
@@ -250,11 +250,15 @@ function WebhookModal({ product, onClose }: { product: Product; onClose: () => v
     } finally {
       setLoading(false);
     }
-  }
+  }, [product.id]);
 
   useEffect(() => {
-    void loadEvents();
-  }, [product.id]);
+    const timeout = window.setTimeout(() => {
+      void loadEvents();
+    }, 0);
+
+    return () => window.clearTimeout(timeout);
+  }, [loadEvents]);
 
   async function handleRetry(eventId: string) {
     try {

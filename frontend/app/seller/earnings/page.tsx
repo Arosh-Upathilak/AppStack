@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import Icon from "@/components/Icon";
 import { toast } from "react-toastify";
 import { useSession } from "next-auth/react";
@@ -29,7 +29,7 @@ export default function SellerEarningsPage() {
   const [payoutEmail, setPayoutEmail] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  const loadData = async (pageNum = 1) => {
+  const loadData = useCallback(async (pageNum = 1) => {
     try {
       setLoading(true);
       const summaryRes = await getSellerEarningsSummary();
@@ -44,17 +44,25 @@ export default function SellerEarningsPage() {
     } finally {
       setLoading(false);
     }
-  };
-
-  useEffect(() => {
-    loadData(1);
   }, []);
 
   useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      void loadData(1);
+    }, 0);
+
+    return () => window.clearTimeout(timeout);
+  }, [loadData]);
+
+  useEffect(() => {
     if (session?.user?.email) {
-      setPayoutEmail(session.user.email);
+      const timeout = window.setTimeout(() => {
+        setPayoutEmail(session.user.email ?? "");
+      }, 0);
+
+      return () => window.clearTimeout(timeout);
     }
-  }, [session]);
+  }, [session?.user?.email]);
 
   const handleOpenModal = () => {
     if (!summary || summary.withdrawableCents < 1000) {

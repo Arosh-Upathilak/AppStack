@@ -76,6 +76,15 @@ function averageRating(reviews: { rating: number }[]) {
   return Math.round((total / reviews.length) * 10) / 10;
 }
 
+function isLocalhostWebhookUrl(value: string) {
+  try {
+    const parsed = new URL(value);
+    return parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1";
+  } catch {
+    return false;
+  }
+}
+
 function sellerDisplayName(seller: {
   firstName: string | null;
   lastName: string | null;
@@ -85,7 +94,7 @@ function sellerDisplayName(seller: {
   return fullName || seller.email;
 }
 
-function serializeProduct(product: any) {
+function serializeProduct(product: any, options: { includeWebhookSecret?: boolean } = {}) {
   const plans = product.plans ?? [];
   const reviews = product.reviews ?? [];
   const minPlan = plans.find((plan: any) => plan.isActive) ?? plans[0];
@@ -103,6 +112,7 @@ function serializeProduct(product: any) {
     hue: product.hue,
     status: product.status,
     webhookUrl: product.webhookUrl,
+    webhookSecret: options.includeWebhookSecret ? product.webhookSecret : undefined,
     webhookTested: product.webhookTested,
     rejectionReason: product.rejectionReason,
     submittedAt: product.submittedAt,
@@ -223,7 +233,7 @@ export const listProducts = asyncHandler(async (req: Request, res: Response) => 
 
   return res.status(200).json({
     success: true,
-    products: products.map(serializeProduct),
+    products: products.map((product) => serializeProduct(product)),
   });
 });
 
@@ -297,7 +307,7 @@ export const listSellerProducts = asyncHandler(
 
     return res.status(200).json({
       success: true,
-      products: products.map(serializeProduct),
+      products: products.map((product) => serializeProduct(product, { includeWebhookSecret: true })),
     });
   },
 );
@@ -344,7 +354,7 @@ export const createSellerProduct = asyncHandler(
     return res.status(201).json({
       success: true,
       message: "Product draft created",
-      product: serializeProduct(product),
+      product: serializeProduct(product, { includeWebhookSecret: true }),
     });
   },
 );
@@ -416,7 +426,7 @@ export const updateSellerProduct = asyncHandler(
     return res.status(200).json({
       success: true,
       message: "Product draft updated",
-      product: serializeProduct(product),
+      product: serializeProduct(product, { includeWebhookSecret: true }),
     });
   },
 );
@@ -445,6 +455,21 @@ export const submitSellerProduct = asyncHandler(
       throw new AppError("At least one active plan is required", 400);
     }
 
+    if (!product.webhookUrl) {
+      throw new AppError("A webhook URL is required before product submission", 400);
+    }
+
+    if (
+      process.env.NODE_ENV !== "development" &&
+      isLocalhostWebhookUrl(product.webhookUrl)
+    ) {
+      throw new AppError("Localhost webhook URLs are allowed only in development", 400);
+    }
+
+    if (!product.webhookTested) {
+      throw new AppError("Send a successful webhook test before product submission", 400);
+    }
+
     const updatedProduct = await prisma.product.update({
       where: {
         id: product.id,
@@ -465,7 +490,7 @@ export const submitSellerProduct = asyncHandler(
     return res.status(200).json({
       success: true,
       message: "Product submitted for admin approval",
-      product: serializeProduct(updatedProduct),
+      product: serializeProduct(updatedProduct, { includeWebhookSecret: true }),
     });
   },
 );
@@ -484,7 +509,7 @@ export const listPendingProducts = asyncHandler(
 
     return res.status(200).json({
       success: true,
-      products: products.map(serializeProduct),
+      products: products.map((product) => serializeProduct(product, { includeWebhookSecret: true })),
     });
   },
 );
@@ -549,7 +574,7 @@ export const decideProduct = asyncHandler(async (req: Request, res: Response) =>
   return res.status(200).json({
     success: true,
     message: `Product ${decision.toLowerCase()}`,
-    product: serializeProduct(updatedProduct),
+    product: serializeProduct(updatedProduct, { includeWebhookSecret: true }),
   });
 });
 
