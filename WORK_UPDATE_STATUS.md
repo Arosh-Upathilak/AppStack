@@ -30,17 +30,17 @@ Updated: 2026-06-13
 | REQ-24 Upgrade/downgrade/cancel | Partial: cancellation request implemented. | Partial: `PATCH /api/subscriptions/:id` supports cancel request. | Upgrade/downgrade deferred. |
 | REQ-25 Notify SaaS on plan change | Not started. | Not started. | Deferred to webhook execution phase. |
 | REQ-26 Multiple subscriptions from same plan | Implemented: checkout creates separate subscription records. | Implemented by schema/API. | Implemented. |
-| REQ-27 Admin approval for cancellation | Partial: cancellation moves to `CANCEL_PENDING`. | Partial: no admin cancellation queue yet. | Deferred. |
+| REQ-27 Admin approval for cancellation | Implemented: admin cancellations queue screen (`/admin/cancellations`). | Implemented: `GET /api/admin/cancellations/pending` and `POST /api/admin/cancellations/:id/decision`. | Implemented: approve/reject updates subscription and notifies buyer. |
 | REQ-28-30 Invoice history/download | Implemented. | Implemented list/download endpoints and persisted invoices. | Implemented for simulator invoices. |
 | REQ-31-32 Credit card management | Implemented in buyer settings. | Implemented simulator add/delete/set-primary endpoints. | Implemented without storing full card details. |
-| REQ-33-39 Scheduled payments/refunds | Not started. | Models partially support invoices/subscriptions; scheduler/refunds deferred. | Deferred. |
+| REQ-33-39 Scheduled payments/refunds | Implemented: buyer refund request UI and admin refunds queue (`/admin/refunds`). | Implemented: hourly billing scheduler (`services/scheduler.ts`) renews due subscriptions, generates PAID invoices and `payment.succeeded/failed` webhooks; refund request/approve/reject with reversal transactions. | Implemented in simulator mode; manual trigger via `POST /api/admin/scheduler/trigger`. |
 | REQ-40-46 Create product and approval | Implemented: seller product form and admin pending product queue. | Implemented product, plans, submit, approve/reject APIs. | Implemented with notifications; webhook test is simulator flag. |
 | REQ-47-53 Product edits/deletion | Partial: draft/rejected product update API exists; UI edit/delete not included. | Partial. | Deferred for approved-change/delete approval workflows. |
 | REQ-54 Seller product list | Implemented. | Implemented `GET /api/seller/products`. | Implemented. |
 | REQ-55-57 Seller subscription summaries / PII protection | Partial: seller overview remains mostly simulator. | Partial: subscription model exists and seller notifications avoid buyer PII beyond consented email. | Detailed seller subscription dashboards deferred. |
-| REQ-58-66 Earnings, payouts, schedules | Not started. | Not started beyond simulator seller overview. | Deferred. |
+| REQ-58-66 Earnings, payouts, schedules | Implemented: seller earnings screen (`/seller/earnings`) and admin payouts queue (`/admin/payouts`). | Implemented: `GET /api/seller/earnings/summary` and `/transactions`, `POST /api/seller/payouts/request`, admin payout approve/reject; transactions lock for 30 days then auto-unlock to AVAILABLE. | Implemented: withdrawable balance = available − withdrawn − pending; admins notified on request. |
 | REQ-67-75 Events, docs, sandbox | Partial: webhook URL stored and public copy describes integrations. | Partial: no delivery, docs portal or sandbox yet. | Deferred. |
-| REQ-76-80 Admin user management | Not started. | Not started. | Deferred. |
+| REQ-76-80 Admin user management | Implemented: admin users screen (`/admin/users`) with role edit and GDPR delete. | Implemented: `GET /api/admin/users`, `PATCH /api/admin/users/:id/role`, `DELETE /api/admin/users/:id` (GDPR anonymize). | Implemented: GDPR delete anonymizes PII in a transaction while preserving financial records. |
 | NRQ-1-2 Scale/performance | Partial: indexed product/subscription/payment tables added. | Partial. | Load testing deferred. |
 | NRQ-3-4 SEO/meta pixel | Partial: product metadata and public page metadata exist. | Not applicable. | Meta pixel deferred. |
 | NRQ-5 No card/bank storage | Implemented: only brand, last4, expiry and simulator token are stored. | Implemented. | Real processor tokenization deferred. |
