@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import axios from "axios";
 import { toast } from "react-toastify";
 import Icon from "@/components/Icon";
+import { getErrorMessage } from "@/lib/api/errors";
 
 export default function VerifyEmailPage() {
   const router = useRouter();
@@ -49,11 +50,8 @@ export default function VerifyEmailPage() {
       );
 
       router.push("/login");
-    } catch (err: any) {
-      setError(
-        err?.response?.data?.error ||
-          "Invalid verification code",
-      );
+    } catch (err) {
+      setError(getErrorMessage(err, "Invalid verification code"));
     } finally {
       setBusy(false);
     }
@@ -83,11 +81,8 @@ export default function VerifyEmailPage() {
       }
 
       setTimer(60);
-    } catch (err: any) {
-      toast.error(
-        err?.response?.data?.error ||
-          "Failed to resend OTP",
-      );
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Failed to resend OTP"));
     } finally {
       setResendOtpSending(false);
     }

@@ -210,6 +210,38 @@ const loginUser = asyncHandler(async (req: Request, res: Response) => {
   });
 });
 
+const getCurrentUser = asyncHandler(async (req: Request, res: Response) => {
+  const requestUser = (req as any).user;
+
+  if (!requestUser?.id) {
+    throw new AppError("Unauthorized", 401);
+  }
+
+  const user = await prisma.user.findUnique({
+    where: {
+      id: requestUser.id,
+    },
+  });
+
+  if (!user) {
+    throw new AppError("User not found", 404);
+  }
+
+  const accessToken = signAccessToken(user.id, user.roles);
+
+  return res.status(200).json({
+    success: true,
+    message: "Current user fetched successfully",
+    accessToken,
+    user: {
+      id: user.id,
+      email: user.email,
+      role: user.roles,
+      sellerStatus: await getSellerStatus(user.id),
+    },
+  });
+});
+
 // Send OTP
 const sendOtp = asyncHandler(async (req: Request, res: Response) => {
   const { email } = req.body;
@@ -454,8 +486,8 @@ const googleLogin = asyncHandler(async (req: Request, res: Response) => {
         html: createAccountTemplate(name, email),
       };
       await transporter.sendMail(mailOptions);
-    } catch {
-      throw new AppError("Failed to send reset email", 500);
+    } catch (error) {
+      console.error("Failed to send Google welcome email:", error);
     }
   }
 
@@ -474,12 +506,147 @@ const googleLogin = asyncHandler(async (req: Request, res: Response) => {
   });
 });
 
+const listUsers = asyncHandler(async (req: Request, res: Response) => {
+  const page = Math.max(1, Number(req.query.page) || 1);
+  const limit = Math.max(1, Number(req.query.limit) || 10);
+  const skip = (page - 1) * limit;
+
+  const search = typeof req.query.search === "string" ? req.query.search.trim() : "";
+  const role = typeof req.query.role === "string" ? req.query.role.trim() : "";
+
+  const whereClause: any = {};
+
+  if (search) {
+    whereClause.OR = [
+      { email: { contains: search, mode: "insensitive" } },
+      { firstName: { contains: search, mode: "insensitive" } },
+      { lastName: { contains: search, mode: "insensitive" } },
+    ];
+  }
+
+  if (role) {
+    whereClause.roles = { has: role as any };
+  }
+
+  const users = await prisma.user.findMany({
+    where: whereClause,
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      email: true,
+      roles: true,
+      isVerified: true,
+      createdAt: true,
+    },
+    orderBy: { createdAt: "desc" },
+    skip,
+    take: limit,
+  });
+
+  const total = await prisma.user.count({ where: whereClause });
+
+  return res.status(200).json({
+    success: true,
+    users,
+    pagination: {
+      page,
+      limit,
+      total,
+      pages: Math.ceil(total / limit),
+    },
+  });
+});
+
+const updateUserRole = asyncHandler(async (req: Request, res: Response) => {
+  const userId = String(req.params.userId);
+  const { roles } = req.body as { roles: ("BUYER" | "SELLER" | "ADMIN")[] };
+
+  if (!roles || !Array.isArray(roles) || roles.length === 0) {
+    throw new AppError("Roles array is required and cannot be empty", 400);
+  }
+
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) {
+    throw new AppError("User not found", 404);
+  }
+
+  const updatedUser = await prisma.user.update({
+    where: { id: userId },
+    data: { roles: { set: roles } },
+    select: {
+      id: true,
+      email: true,
+      roles: true,
+    },
+  });
+
+  return res.status(200).json({
+    success: true,
+    message: "User roles updated successfully",
+    user: updatedUser,
+  });
+});
+
+const deleteUserGDPR = asyncHandler(async (req: Request, res: Response) => {
+  const userId = String(req.params.userId);
+
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) {
+    throw new AppError("User not found", 404);
+  }
+
+  const anonymizedEmail = `gdpr-${userId}@anonymized.local`;
+
+  await prisma.$transaction(async (tx) => {
+    // Update User PII
+    await tx.user.update({
+      where: { id: userId },
+      data: {
+        firstName: "Anonymized",
+        lastName: "User",
+        email: anonymizedEmail,
+        password: null,
+        isVerified: false,
+        roles: { set: [] }, // Clear roles to prevent login
+      },
+    });
+
+    // Anonymize Consents
+    await tx.consent.updateMany({
+      where: { userId },
+      data: {
+        recipientEmail: anonymizedEmail,
+        ipAddress: "0.0.0.0", // Clear IP
+        userAgent: "GDPR Anonymized",
+      },
+    });
+
+    // Anonymize Subscriptions
+    await tx.subscription.updateMany({
+      where: { buyerId: userId },
+      data: {
+        recipientEmail: anonymizedEmail,
+      },
+    });
+  });
+
+  return res.status(200).json({
+    success: true,
+    message: "User personal data anonymized successfully under GDPR guidelines.",
+  });
+});
+
 export {
   createUser,
+  getCurrentUser,
   loginUser,
   sendOtp,
   verifyAccount,
   forgotPasswordSendEmail,
   resetPassword,
   googleLogin,
+  listUsers,
+  updateUserRole,
+  deleteUserGDPR,
 };

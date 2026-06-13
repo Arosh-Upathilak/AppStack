@@ -2,271 +2,193 @@
 
 import React from 'react';
 import { useRouter } from 'next/navigation';
+import { useSession } from 'next-auth/react';
 import Icon from '@/components/Icon';
 import AppLogo from '@/components/AppLogo';
 import Badge from '@/components/Badge';
 import { ToastContext } from '@/components/DashboardChrome';
-import { PRODUCTS, Product } from '@/data/mock';
+import { getProduct, listReviews, checkReviewEligibility, submitProductReview } from '@/lib/api/products';
+import {
+  createSubscription,
+  listPaymentMethods,
+} from '@/lib/api/billing';
+import { getErrorMessage } from '@/lib/api/errors';
+import type { PaymentMethod, Product, ProductPlan, Review } from '@/lib/api/types';
 
 interface ProductDetailProps {
   productId: string;
-  /** 'buyer' = Subscribe CTA; 'public' = Sign up CTA */
   mode?: 'buyer' | 'public';
 }
 
-// ── Tab subcomponents ─────────────────────────────────────
+function money(cents: number, currency = 'USD') {
+  return new Intl.NumberFormat(undefined, {
+    style: 'currency',
+    currency,
+  }).format(cents / 100);
+}
 
-function ReviewCard({ quote, author, role }: { quote: string; author: string; role: string }) {
+function ReviewCard({ review }: { review: Review }) {
   return (
     <div style={{ padding: 16, border: '1px solid var(--line)', borderRadius: 10 }}>
       <div className="row gap-1" style={{ marginBottom: 8 }}>
-        {[1, 2, 3, 4, 5].map(i => <Icon key={i} name="star" size={11} stroke={0} style={{ fill: '#f59e0b', color: '#f59e0b' }} />)}
+        {[1, 2, 3, 4, 5].map(i => (
+          <Icon
+            key={i}
+            name="star"
+            size={11}
+            stroke={0}
+            style={{ fill: i <= review.rating ? '#f59e0b' : 'var(--line)', color: i <= review.rating ? '#f59e0b' : 'var(--line)' }}
+          />
+        ))}
       </div>
-      <p style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.55, margin: '0 0 12px' }}>&quot;{quote}&quot;</p>
+      <p style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.55, margin: '0 0 12px' }}>&quot;{review.body}&quot;</p>
       <div className="row gap-2">
-        <div className="sb-avatar" style={{ width: 28, height: 28, fontSize: 10 }}>{author.split(' ').map(n => n[0]).join('')}</div>
+        <div className="sb-avatar" style={{ width: 28, height: 28, fontSize: 10 }}>{review.authorName.split(' ').map(n => n[0]).join('').slice(0, 2)}</div>
         <div>
-          <div style={{ fontSize: 12.5, fontWeight: 600 }}>{author}</div>
-          <div style={{ fontSize: 11, color: 'var(--ink-4)' }}>{role}</div>
+          <div style={{ fontSize: 12.5, fontWeight: 600 }}>{review.authorName}</div>
+          <div style={{ fontSize: 11, color: 'var(--ink-4)' }}>{review.authorRole ?? 'Verified buyer'}</div>
         </div>
       </div>
     </div>
   );
 }
 
-function OverviewTab({ p }: { p: Product }) {
+function PlanCard({
+  plan,
+  active,
+  onClick,
+}: {
+  plan: ProductPlan;
+  active: boolean;
+  onClick: () => void;
+}) {
   return (
-    <div className="card card-pad">
-      <h3 style={{ margin: '0 0 12px', fontSize: 17, fontWeight: 600, letterSpacing: '-0.01em' }}>About {p.name}</h3>
-      <p style={{ color: 'var(--ink-2)', lineHeight: 1.65, marginBottom: 24 }}>
-        {p.name} is engineered to break down silos between sales, marketing and support teams. By centralizing customer data into a single, high-performance architecture, it enables organizations to move faster and make decisions based on real-time intelligence rather than historical guesswork.
-      </p>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12, marginBottom: 32 }}>
-        {[
-          { icon: 'layers', title: 'Unified data core', desc: 'Centralize all customer interactions and transactional history.' },
-          { icon: 'chart', title: 'Predictive analytics', desc: 'Forecast pipeline revenue and identify churn risks before they happen.' },
-          { icon: 'cube', title: 'Workflow automation', desc: 'Design multi-stage automation sequences with the visual builder.' },
-          { icon: 'shield', title: 'Enterprise security', desc: 'SOC 2 Type II with granular role-based access controls.' },
-        ].map(f => (
-          <div key={f.title} style={{ padding: 16, border: '1px solid var(--line)', borderRadius: 10, background: 'var(--surface-muted)' }}>
-            <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--brand-soft)', color: 'var(--brand)', display: 'grid', placeItems: 'center', marginBottom: 12 }}>
-              <Icon name={f.icon as Parameters<typeof Icon>[0]['name']} size={16} />
-            </div>
-            <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink-1)', marginBottom: 4 }}>{f.title}</div>
-            <div style={{ fontSize: 12.5, color: 'var(--ink-3)', lineHeight: 1.5 }}>{f.desc}</div>
-          </div>
+    <button
+      type="button"
+      onClick={onClick}
+      className="card"
+      style={{
+        padding: 16,
+        textAlign: 'left',
+        borderColor: active ? 'var(--brand)' : 'var(--line)',
+        boxShadow: active ? '0 0 0 1px var(--brand)' : undefined,
+      }}
+    >
+      <div className="row" style={{ justifyContent: 'space-between', marginBottom: 10 }}>
+        <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink-1)' }}>{plan.name}</div>
+        {active && <Icon name="check_circle" size={16} style={{ color: 'var(--brand)' }} />}
+      </div>
+      <div style={{ fontSize: 24, fontWeight: 600, color: 'var(--ink-1)', marginBottom: 10 }}>
+        {money(plan.priceCents, plan.currency)}
+        <span style={{ fontSize: 12, color: 'var(--ink-4)', fontWeight: 500 }}>/{plan.billingInterval === 'YEARLY' ? 'yr' : 'mo'}</span>
+      </div>
+      <div style={{ display: 'grid', gap: 6 }}>
+        {plan.features.slice(0, 4).map(feature => (
+          <span key={feature} className="row gap-2" style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>
+            <Icon name="check" size={12} style={{ color: 'var(--success)' }} />
+            {feature}
+          </span>
         ))}
       </div>
-      <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-        <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>Customer voices</h3>
-        <button className="btn btn-ghost btn-sm">See all {p.reviews.toLocaleString()} <Icon name="arrow_right" size={11} /></button>
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-        <ReviewCard quote="Transformed our sales pipeline visibility. The unified dashboard gives our exec team exactly what they need without digging through reports." author="Sarah Jenkins" role="VP of Sales · TechCorp" />
-        <ReviewCard quote="Migration was smoother than expected. The API documentation is stellar, making it easy to integrate with our existing ERP." author="Marcus Rivera" role="CTO · LogisticsPro" />
-      </div>
-    </div>
+    </button>
   );
 }
-
-function Cell({ v }: { v: boolean | string }) {
-  if (v === true) return <Icon name="check" size={14} style={{ color: 'var(--success)' }} />;
-  if (v === false) return <Icon name="minus" size={14} style={{ color: 'var(--line-strong)' }} />;
-  return <span style={{ fontSize: 12.5, color: 'var(--ink-2)', fontVariantNumeric: 'tabular-nums' }}>{v}</span>;
-}
-
-function FeaturesTab() {
-  return (
-    <div className="card">
-      <table className="tbl">
-        <thead>
-          <tr>
-            <th style={{ paddingLeft: 20 }}>Feature</th>
-            <th style={{ textAlign: 'center' }}>Essentials</th>
-            <th style={{ textAlign: 'center', background: 'var(--brand-soft)' }}>Professional</th>
-            <th style={{ textAlign: 'center' }}>Enterprise</th>
-          </tr>
-        </thead>
-        <tbody>
-          {[
-            { f: 'Contact management', e: '5K records', p: '50K records', x: 'Unlimited' },
-            { f: 'Workflow automation', e: false, p: '20 workflows', x: 'Unlimited' },
-            { f: 'API access', e: false, p: '10K calls/mo', x: 'Unlimited' },
-            { f: 'Custom dashboards', e: '2', p: '20', x: 'Unlimited' },
-            { f: 'Audit logs', e: false, p: '30 days', x: '1 year' },
-            { f: 'SSO & SAML', e: false, p: false, x: true },
-            { f: 'Dedicated success manager', e: false, p: false, x: true },
-            { f: 'SLA guarantee', e: false, p: '99.5%', x: '99.99%' },
-          ].map((row, i) => (
-            <tr key={i}>
-              <td style={{ paddingLeft: 20, fontWeight: 500, color: 'var(--ink-1)' }}>{row.f}</td>
-              <td style={{ textAlign: 'center' }}><Cell v={row.e} /></td>
-              <td style={{ textAlign: 'center', background: 'rgba(232, 239, 255, 0.5)' }}><Cell v={row.p} /></td>
-              <td style={{ textAlign: 'center' }}><Cell v={row.x} /></td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function IntegrationsTab() {
-  const integrations = [
-    { name: 'Slack', cat: 'Comms', hue: 'teamsync' }, { name: 'Google Workspace', cat: 'Productivity', hue: 'pixelgrid' },
-    { name: 'Stripe', cat: 'Payments', hue: 'stripe' }, { name: 'Jira', cat: 'Project mgmt', hue: 'jira' },
-    { name: 'Salesforce', cat: 'CRM', hue: 'cloudsync' }, { name: 'HubSpot', cat: 'Marketing', hue: 'pixelgrid' },
-    { name: 'Zendesk', cat: 'Support', hue: 'teamsync' }, { name: 'Notion', cat: 'Docs', hue: 'notion' },
-    { name: 'Linear', cat: 'Issue tracking', hue: 'linear' }, { name: 'Datadog', cat: 'Observability', hue: 'datadog' },
-    { name: 'Intercom', cat: 'Messaging', hue: 'intercom' }, { name: 'Figma', cat: 'Design', hue: 'figma' },
-  ];
-  return (
-    <div className="card card-pad">
-      <div className="row" style={{ justifyContent: 'space-between', marginBottom: 16 }}>
-        <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>Available integrations · {integrations.length}</h3>
-        <div className="tb-search" style={{ width: 240 }}>
-          <Icon name="search" size={13} className="tb-search-icon" />
-          <input placeholder="Search integrations…" />
-        </div>
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
-        {integrations.map(i => (
-          <div key={i.name} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 12, border: '1px solid var(--line)', borderRadius: 10 }}>
-            <AppLogo name={i.name} hue={i.hue} size="sm" />
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 13, fontWeight: 600 }}>{i.name}</div>
-              <div style={{ fontSize: 11, color: 'var(--ink-4)' }}>{i.cat}</div>
-            </div>
-            <Icon name="check_circle" size={14} style={{ color: 'var(--success)' }} />
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function ReviewsTab({ p }: { p: Product }) {
-  return (
-    <div className="card card-pad">
-      <div className="row gap-5" style={{ marginBottom: 24, paddingBottom: 24, borderBottom: '1px solid var(--line-soft)' }}>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: 56, fontWeight: 600, letterSpacing: '-0.03em', lineHeight: 1, color: 'var(--ink-1)' }}>{p.rating}</div>
-          <div className="row gap-1" style={{ justifyContent: 'center', marginTop: 6 }}>
-            {[1, 2, 3, 4, 5].map(i => <Icon key={i} name="star" size={14} stroke={0} style={{ fill: '#f59e0b', color: '#f59e0b' }} />)}
-          </div>
-          <div style={{ fontSize: 11.5, color: 'var(--ink-4)', marginTop: 8 }}>{p.reviews.toLocaleString()} reviews</div>
-        </div>
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {[5, 4, 3, 2, 1].map(r => {
-            const pct = r === 5 ? 78 : r === 4 ? 16 : r === 3 ? 4 : r === 2 ? 1 : 1;
-            return (
-              <div key={r} className="row gap-3" style={{ fontSize: 12 }}>
-                <span style={{ width: 12, color: 'var(--ink-3)' }}>{r}</span>
-                <Icon name="star" size={11} stroke={0} style={{ fill: '#f59e0b', color: '#f59e0b' }} />
-                <div style={{ flex: 1, height: 6, background: 'var(--surface-pressed)', borderRadius: 999 }}>
-                  <div style={{ width: `${pct}%`, height: '100%', background: '#f59e0b', borderRadius: 999 }} />
-                </div>
-                <span style={{ width: 30, textAlign: 'right', color: 'var(--ink-3)' }}>{pct}%</span>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <ReviewCard quote="Flexaro transformed our sales pipeline visibility. Our exec team finally has the data they need without digging through 4 different tools." author="Sarah Jenkins" role="VP of Sales · TechCorp" />
-        <ReviewCard quote="Migration was smoother than expected. The API documentation is stellar, making it easy to integrate with our existing ERP." author="Marcus Rivera" role="CTO · LogisticsPro" />
-        <ReviewCard quote="Onboarding was fast — we were running automations in production within a week. The pricing felt fair for the value delivered." author="Priya Shah" role="Head of Ops · Atlas Retail" />
-      </div>
-    </div>
-  );
-}
-
-function SecurityTab() {
-  return (
-    <div className="card card-pad">
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12, marginBottom: 24 }}>
-        {[
-          { icon: 'shield', title: 'SOC 2 Type II', desc: 'Audited annually by an independent third party.' },
-          { icon: 'lock', title: 'End-to-end encryption', desc: 'AES-256 at rest, TLS 1.3 in transit.' },
-          { icon: 'check_circle', title: 'GDPR compliant', desc: 'Data residency in EU available on Enterprise.' },
-          { icon: 'users', title: 'SSO & SCIM', desc: 'Okta, Azure AD, Google Workspace supported.' },
-        ].map(s => (
-          <div key={s.title} style={{ padding: 16, border: '1px solid var(--line)', borderRadius: 10 }}>
-            <div className="row gap-2">
-              <Icon name={s.icon as Parameters<typeof Icon>[0]['name']} size={18} style={{ color: 'var(--success)' }} />
-              <div style={{ fontSize: 13.5, fontWeight: 600 }}>{s.title}</div>
-            </div>
-            <div style={{ fontSize: 12.5, color: 'var(--ink-3)', marginTop: 6, lineHeight: 1.5 }}>{s.desc}</div>
-          </div>
-        ))}
-      </div>
-      <div style={{ padding: 16, background: 'var(--surface-muted)', borderRadius: 10, fontSize: 12.5, color: 'var(--ink-3)' }}>
-        <strong style={{ color: 'var(--ink-1)' }}>Trust Center</strong> · Request DPA, view subprocessors, download attestation reports.
-        <a style={{ color: 'var(--brand)', fontWeight: 600, marginLeft: 8 }}>Visit Trust Center <Icon name="external" size={10} /></a>
-      </div>
-    </div>
-  );
-}
-
-const planData: Record<string, { base: number; features: string[] }> = {
-  Essentials:   { base: 49,  features: ['Contact management', 'Standard reporting', 'Email integration', '10 GB storage'] },
-  Professional: { base: 99,  features: ['Everything in Essentials', 'Advanced automation', 'Custom dashboards', 'API access', 'Priority support'] },
-  Enterprise:   { base: 199, features: ['Everything in Professional', 'Dedicated success manager', 'SLA guarantees', 'SSO & advanced security', 'Audit logs'] },
-};
 
 function CheckoutModal({
-  p, plan, seats, annual, effective, submitting, onClose, onConfirm,
+  product,
+  plan,
+  methods,
+  defaultEmail,
+  submitting,
+  onClose,
+  onConfirm,
 }: {
-  p: Product;
-  plan: string;
-  seats: number;
-  annual: boolean;
-  effective: number;
+  product: Product;
+  plan: ProductPlan;
+  methods: PaymentMethod[];
+  defaultEmail: string;
   submitting: boolean;
   onClose: () => void;
-  onConfirm: () => void;
+  onConfirm: (input: { paymentMethodId: string; recipientEmail: string; seats: number; acceptEmailConsent: boolean }) => void;
 }) {
-  const period = annual ? 'year' : 'month';
-  const billed = annual ? effective * 12 : effective;
+  const primary = methods.find(method => method.isPrimary) ?? methods[0];
+  const [paymentMethodId, setPaymentMethodId] = React.useState(primary?.id ?? '');
+  const [recipientEmail, setRecipientEmail] = React.useState(defaultEmail);
+  const [seats, setSeats] = React.useState(1);
+  const [acceptEmailConsent, setAcceptEmailConsent] = React.useState(false);
+  const total = plan.priceCents * Math.max(1, seats);
+
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={e => e.stopPropagation()}>
         <div className="row gap-3" style={{ alignItems: 'center', marginBottom: 16 }}>
-          <AppLogo name={p.name} hue={p.hue} size="lg" />
+          <AppLogo name={product.name} hue={product.hue} size="lg" />
           <div>
             <h3 style={{ margin: 0, fontSize: 17, fontWeight: 600 }}>Confirm subscription</h3>
-            <div style={{ fontSize: 12.5, color: 'var(--ink-3)', marginTop: 2 }}>{p.name} · {p.vendor}</div>
+            <div style={{ fontSize: 12.5, color: 'var(--ink-3)', marginTop: 2 }}>{product.name} · {plan.name}</div>
           </div>
         </div>
+
+        {methods.length === 0 ? (
+          <div className="card" style={{ padding: 16, background: 'var(--surface-muted)', marginBottom: 16 }}>
+            <div style={{ fontWeight: 600, marginBottom: 4 }}>Add a payment method first</div>
+            <div style={{ fontSize: 13, color: 'var(--ink-3)', lineHeight: 1.5 }}>
+              Open buyer settings and add a simulator card before subscribing.
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: 'grid', gap: 12, marginBottom: 16 }}>
+            <div>
+              <label className="field-label">Recipient email shared with seller</label>
+              <input className="input" type="email" value={recipientEmail} onChange={e => setRecipientEmail(e.target.value)} />
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <div>
+                <label className="field-label">Seats</label>
+                <input className="input" type="number" min={1} value={seats} onChange={e => setSeats(Number(e.target.value))} />
+              </div>
+              <div>
+                <label className="field-label">Payment method</label>
+                <select className="input" value={paymentMethodId} onChange={e => setPaymentMethodId(e.target.value)}>
+                  {methods.map(method => (
+                    <option key={method.id} value={method.id}>
+                      {method.brand} ending {method.last4}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <label style={{ display: 'flex', gap: 10, fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.5 }}>
+              <input
+                type="checkbox"
+                checked={acceptEmailConsent}
+                onChange={e => setAcceptEmailConsent(e.target.checked)}
+                style={{ marginTop: 3 }}
+              />
+              I agree that AppStack may share the recipient email with {product.vendor} to activate and manage this SaaS subscription.
+            </label>
+          </div>
+        )}
 
         <div style={{ border: '1px solid var(--line)', borderRadius: 10, overflow: 'hidden', marginBottom: 16 }}>
-          {[
-            { k: 'Plan', v: plan },
-            { k: 'Seats', v: `${seats} users` },
-            { k: 'Billing', v: annual ? 'Annual' : 'Monthly' },
-          ].map(row => (
-            <div key={row.k} className="row" style={{ justifyContent: 'space-between', padding: '10px 14px', borderBottom: '1px solid var(--line-soft)', fontSize: 13 }}>
-              <span style={{ color: 'var(--ink-3)' }}>{row.k}</span>
-              <span style={{ fontWeight: 500, color: 'var(--ink-1)' }}>{row.v}</span>
-            </div>
-          ))}
-          <div className="row" style={{ justifyContent: 'space-between', padding: '12px 14px', background: 'var(--surface-muted)' }}>
-            <span style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>Total · billed {annual ? 'annually' : 'monthly'}</span>
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: 18, fontWeight: 600, color: 'var(--ink-1)', fontVariantNumeric: 'tabular-nums' }}>${billed.toLocaleString()}/{period}</div>
-              {annual && <div style={{ fontSize: 11, color: 'var(--ink-4)' }}>${effective.toLocaleString()}/mo equivalent</div>}
-            </div>
+          <div className="row" style={{ justifyContent: 'space-between', padding: '10px 14px', fontSize: 13 }}>
+            <span style={{ color: 'var(--ink-3)' }}>Plan</span>
+            <span style={{ fontWeight: 500 }}>{plan.name}</span>
           </div>
-        </div>
-
-        <div className="row gap-2" style={{ justifyContent: 'center', fontSize: 11, color: 'var(--ink-4)', marginBottom: 16 }}>
-          <Icon name="shield" size={11} /> Billed to your account on file · Cancel anytime
+          <div className="row" style={{ justifyContent: 'space-between', padding: '12px 14px', background: 'var(--surface-muted)' }}>
+            <span style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>Total now</span>
+            <div style={{ fontSize: 18, fontWeight: 600, color: 'var(--ink-1)' }}>{money(total, plan.currency)}</div>
+          </div>
         </div>
 
         <div className="row gap-2" style={{ justifyContent: 'flex-end' }}>
           <button className="btn btn-secondary" onClick={onClose} disabled={submitting}>Cancel</button>
-          <button className="btn btn-primary" onClick={onConfirm} disabled={submitting}>
-            {submitting ? 'Processing…' : <>Confirm subscription <Icon name="arrow_right" size={13} /></>}
+          <button
+            className="btn btn-primary"
+            disabled={submitting || methods.length === 0 || !acceptEmailConsent}
+            onClick={() => onConfirm({ paymentMethodId, recipientEmail, seats, acceptEmailConsent })}
+          >
+            {submitting ? 'Processing...' : <>Confirm subscription <Icon name="arrow_right" size={13} /></>}
           </button>
         </div>
       </div>
@@ -276,44 +198,131 @@ function CheckoutModal({
 
 export default function ProductDetail({ productId, mode = 'buyer' }: ProductDetailProps) {
   const router = useRouter();
+  const { data: session } = useSession();
   const toastCtx = React.useContext(ToastContext);
   const toast = toastCtx?.toast ?? (() => {});
-
-  const p = PRODUCTS.find(x => x.id === productId) || PRODUCTS[3];
-  const [plan, setPlan] = React.useState('Professional');
-  const [seats, setSeats] = React.useState(15);
-  const [annual, setAnnual] = React.useState(true);
-  const [activeTab, setActiveTab] = React.useState('overview');
+  const [product, setProduct] = React.useState<Product | null>(null);
+  const [reviews, setReviews] = React.useState<Review[]>([]);
+  const [methods, setMethods] = React.useState<PaymentMethod[]>([]);
+  const [selectedPlanId, setSelectedPlanId] = React.useState('');
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
   const [showCheckout, setShowCheckout] = React.useState(false);
   const [submitting, setSubmitting] = React.useState(false);
+  const [eligible, setEligible] = React.useState(false);
+  const [submittingReview, setSubmittingReview] = React.useState(false);
+  const [rating, setRating] = React.useState(5);
+  const [reviewBody, setReviewBody] = React.useState("");
 
-  const monthly = planData[plan].base * seats;
-  const annualMonthly = Math.round(monthly * 0.83);
-  const effective = annual ? annualMonthly : monthly;
-  const savings = (monthly - annualMonthly) * 12;
+  React.useEffect(() => {
+    let cancelled = false;
+    const timeout = window.setTimeout(() => {
+      setLoading(true);
+      Promise.all([
+        getProduct(productId),
+        listReviews(productId),
+        mode === 'buyer' ? listPaymentMethods().catch(() => ({ methods: [] })) : Promise.resolve({ methods: [] }),
+        mode === 'buyer' ? checkReviewEligibility(productId).catch(() => false) : Promise.resolve(false),
+      ])
+        .then(([loadedProduct, loadedReviews, paymentResponse, eligibleToReview]) => {
+          if (cancelled) return;
+          if (!loadedProduct) {
+            setError('Product not found.');
+            return;
+          }
+          setProduct(loadedProduct);
+          setReviews(loadedReviews);
+          setMethods(paymentResponse.methods);
+          setEligible(eligibleToReview);
+          setSelectedPlanId(loadedProduct.plans.find(plan => plan.isActive)?.id ?? loadedProduct.plans[0]?.id ?? '');
+        })
+        .catch(err => {
+          if (!cancelled) setError(getErrorMessage(err, 'Failed to load product'));
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false);
+        });
+    }, 0);
 
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+    };
+  }, [mode, productId]);
+
+  if (loading) {
+    return <div className="page screen-enter"><div className="card card-pad">Loading product...</div></div>;
+  }
+
+  if (error || !product) {
+    return (
+      <div className="page screen-enter">
+        <div className="card card-pad" style={{ color: 'var(--danger,#dc2626)' }}>{error ?? 'Product not found.'}</div>
+      </div>
+    );
+  }
+
+  const selectedPlan = product.plans.find(plan => plan.id === selectedPlanId) ?? product.plans[0];
   const backHref = mode === 'buyer' ? '/buyer/marketplace' : '/marketplace';
-  const ctaLabel = mode === 'buyer' ? 'Subscribe' : 'Sign up to subscribe';
+
   const ctaAction = () => {
-    if (mode === 'buyer') {
-      setShowCheckout(true);
-    } else {
-      router.push(`/register?next=/marketplace/${productId}`);
+    if (mode === 'public') {
+      router.push(`/register?next=/marketplace/${product.slug}`);
+      return;
+    }
+    setShowCheckout(true);
+  };
+
+  const handleConfirm = async (input: {
+    paymentMethodId: string;
+    recipientEmail: string;
+    seats: number;
+    acceptEmailConsent: boolean;
+  }) => {
+    if (!selectedPlan) return;
+    setSubmitting(true);
+    try {
+      await createSubscription({
+        productId: product.id,
+        planId: selectedPlan.id,
+        paymentMethodId: input.paymentMethodId,
+        recipientEmail: input.recipientEmail,
+        seats: input.seats,
+        acceptEmailConsent: input.acceptEmailConsent,
+      });
+      toast(`Subscribed to ${product.name}`);
+      setShowCheckout(false);
+      router.push('/buyer/settings');
+    } catch (err) {
+      toast(getErrorMessage(err, 'Could not complete subscription.'));
+    } finally {
+      setSubmitting(false);
     }
   };
 
-  const handleConfirm = async () => {
-    setSubmitting(true);
+  const handleReviewSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reviewBody.trim()) return;
+
+    setSubmittingReview(true);
     try {
-      // Simulate database / subscription action delay
-      await new Promise((resolve) => setTimeout(resolve, 800));
-      toast(`Subscribed to ${p.name} (Demo subscription created)`);
-      setSubmitting(false);
-      setShowCheckout(false);
-      router.push('/buyer/marketplace');
-    } catch {
-      toast('Could not complete subscription. Please try again.');
-      setSubmitting(false);
+      await submitProductReview(productId, { rating, body: reviewBody.trim() });
+      toast('Thank you! Your review has been submitted.');
+      setReviewBody('');
+      setRating(5);
+      // Reload reviews and eligibility
+      const loadedReviews = await listReviews(productId);
+      setReviews(loadedReviews);
+      setEligible(false); // Can review only once or hide form after submit
+      // Let's also reload the product to update the rating and reviewsCount
+      const loadedProduct = await getProduct(productId);
+      if (loadedProduct) {
+        setProduct(loadedProduct);
+      }
+    } catch (err) {
+      toast(getErrorMessage(err, 'Failed to submit review.'));
+    } finally {
+      setSubmittingReview(false);
     }
   };
 
@@ -327,137 +336,127 @@ export default function ProductDetail({ productId, mode = 'buyer' }: ProductDeta
 
       <div className="card card-pad" style={{ marginBottom: 24 }}>
         <div className="row gap-4" style={{ alignItems: 'flex-start' }}>
-          <AppLogo name={p.name} hue={p.hue} size="xl" />
+          <AppLogo name={product.name} hue={product.hue} size="xl" />
           <div style={{ flex: 1 }}>
             <div className="row gap-2" style={{ marginBottom: 6 }}>
-              <h1 style={{ margin: 0, fontSize: 28, fontWeight: 600, letterSpacing: '-0.02em' }}>{p.name}</h1>
-              {p.badge && <Badge tone="brand"><Icon name="check" size={10} /> {p.badge}</Badge>}
+              <h1 style={{ margin: 0, fontSize: 28, fontWeight: 600, letterSpacing: '-0.02em' }}>{product.name}</h1>
+              <Badge tone="brand"><Icon name="check" size={10} /> Approved</Badge>
             </div>
-            <div style={{ color: 'var(--ink-3)', fontSize: 14, marginBottom: 14, maxWidth: 600 }}>{p.tagline}</div>
+            <div style={{ color: 'var(--ink-3)', fontSize: 14, marginBottom: 14, maxWidth: 680 }}>{product.shortDescription}</div>
             <div className="row gap-4" style={{ flexWrap: 'wrap' }}>
               <span className="row gap-1" style={{ display: 'inline-flex' }}>
                 <Icon name="star" size={13} stroke={0} style={{ fill: '#f59e0b', color: '#f59e0b' }} />
-                <strong style={{ color: 'var(--ink-1)' }}>{p.rating}</strong>
-                <span className="muted">({p.reviews.toLocaleString()} reviews)</span>
+                <strong style={{ color: 'var(--ink-1)' }}>{product.rating || 'New'}</strong>
+                <span className="muted">({product.reviewsCount.toLocaleString()} reviews)</span>
               </span>
-              <span className="row gap-1 muted"><Icon name="users" size={13} />{(p.reviews * 4.2 / 1000).toFixed(1)}K customers</span>
-              <span className="row gap-1 muted"><Icon name="shield" size={13} />SOC 2 Type II</span>
-              <span className="row gap-1 muted"><Icon name="bolt" size={13} />Installs in &lt; 10 min</span>
+              <span className="row gap-1 muted"><Icon name="users" size={13} />{product.vendor}</span>
+              <span className="row gap-1 muted"><Icon name="shield" size={13} />Consent recorded per subscription</span>
             </div>
-          </div>
-          <div className="row gap-2">
-            <button className="btn btn-secondary"><Icon name="external" size={13} /> Open website</button>
-            <button className="btn btn-secondary"><Icon name="play" size={13} /> Watch demo</button>
           </div>
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 380px', gap: 24, alignItems: 'flex-start' }}>
-        <div>
-          <div className="tabs">
-            {['overview', 'features', 'integrations', 'reviews', 'security'].map(tab => (
-              <button key={tab} className={activeTab === tab ? 'active' : ''} onClick={() => setActiveTab(tab)}>
-                {tab === 'reviews' ? `Reviews · ${p.reviews.toLocaleString()}` : tab.charAt(0).toUpperCase() + tab.slice(1)}
-              </button>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 360px', gap: 24, alignItems: 'flex-start' }}>
+        <div style={{ display: 'grid', gap: 18 }}>
+          <div className="card card-pad">
+            <h3 style={{ margin: '0 0 12px', fontSize: 17, fontWeight: 600 }}>About {product.name}</h3>
+            <p style={{ color: 'var(--ink-2)', lineHeight: 1.65, margin: 0 }}>{product.description}</p>
+          </div>
+
+          <div className="card card-pad">
+            <h3 style={{ margin: '0 0 14px', fontSize: 17, fontWeight: 600 }}>Reviews</h3>
+            {reviews.length === 0 ? (
+              <div className="muted" style={{ fontSize: 13 }}>No reviews yet.</div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                {reviews.map(review => <ReviewCard key={review.id} review={review} />)}
+              </div>
+            )}
+
+            {eligible && (
+              <div style={{ borderTop: '1px solid var(--line)', marginTop: 20, paddingTop: 16 }}>
+                <h4 style={{ margin: '0 0 12px', fontSize: 14.5, fontWeight: 600, color: 'var(--ink-1)' }}>Write a Review</h4>
+                <form onSubmit={handleReviewSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  <div className="row gap-2" style={{ alignItems: 'center' }}>
+                    <span style={{ fontSize: 13, color: 'var(--ink-3)' }}>Rating:</span>
+                    <div className="row gap-1">
+                      {[1, 2, 3, 4, 5].map(star => (
+                        <button
+                          key={star}
+                          type="button"
+                          onClick={() => setRating(star)}
+                          style={{ background: 'none', border: 'none', padding: 2, cursor: 'pointer' }}
+                        >
+                          <Icon
+                            name="star"
+                            size={16}
+                            stroke={0}
+                            style={{
+                              fill: star <= rating ? '#f59e0b' : 'var(--line)',
+                              color: star <= rating ? '#f59e0b' : 'var(--line)',
+                            }}
+                          />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <textarea
+                      required
+                      className="input"
+                      rows={3}
+                      placeholder="Share your experience using this product..."
+                      style={{ width: '100%', minHeight: 80, fontSize: 13, resize: 'vertical' }}
+                      value={reviewBody}
+                      onChange={e => setReviewBody(e.target.value)}
+                    />
+                  </div>
+                  <div className="row" style={{ justifyContent: 'flex-end' }}>
+                    <button
+                      type="submit"
+                      className="btn btn-primary btn-sm"
+                      disabled={submittingReview}
+                    >
+                      {submittingReview ? 'Submitting...' : 'Submit Review'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <aside className="card card-pad">
+          <h3 style={{ margin: '0 0 14px', fontSize: 17, fontWeight: 600 }}>Choose a plan</h3>
+          <div style={{ display: 'grid', gap: 10, marginBottom: 16 }}>
+            {product.plans.filter(plan => plan.isActive).map(plan => (
+              <PlanCard
+                key={plan.id}
+                plan={plan}
+                active={selectedPlanId === plan.id}
+                onClick={() => setSelectedPlanId(plan.id)}
+              />
             ))}
           </div>
-          {activeTab === 'overview' && <OverviewTab p={p} />}
-          {activeTab === 'features' && <FeaturesTab />}
-          {activeTab === 'integrations' && <IntegrationsTab />}
-          {activeTab === 'reviews' && <ReviewsTab p={p} />}
-          {activeTab === 'security' && <SecurityTab />}
-        </div>
-
-        <div className="card" style={{ position: 'sticky', top: 80 }}>
-          <div className="card-head">
-            <div><div className="card-title">Try {p.name}</div><div className="card-sub">14-day free trial · No card required</div></div>
-          </div>
-          <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-            <div className="row" style={{ justifyContent: 'space-between', padding: '10px 12px', background: 'var(--surface-muted)', borderRadius: 10 }}>
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 500 }}>Annual billing</div>
-                <div style={{ fontSize: 11.5, color: 'var(--ink-4)', marginTop: 1 }}>Save 17% vs monthly</div>
-              </div>
-              <div className={`switch ${annual ? 'on' : ''}`} onClick={() => setAnnual(!annual)} />
-            </div>
-
-            <div>
-              <div className="field-label">Plan</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {Object.keys(planData).map(k => (
-                  <div key={k} onClick={() => setPlan(k)}
-                       style={{ padding: '10px 12px', borderRadius: 8, border: `1px solid ${plan === k ? 'var(--brand)' : 'var(--line)'}`, background: plan === k ? 'var(--brand-soft)' : 'var(--surface)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', transition: 'border-color 120ms, background 120ms' }}>
-                    <div className="row gap-2">
-                      <div style={{ width: 14, height: 14, borderRadius: 999, border: `2px solid ${plan === k ? 'var(--brand)' : 'var(--line-strong)'}`, position: 'relative' }}>
-                        {plan === k && <div style={{ position: 'absolute', inset: 2, borderRadius: 999, background: 'var(--brand)' }} />}
-                      </div>
-                      <div>
-                        <div style={{ fontSize: 13, fontWeight: 500 }}>{k}</div>
-                        {k === 'Professional' && <div style={{ fontSize: 11, color: 'var(--accent)', fontWeight: 600 }}>Most popular</div>}
-                      </div>
-                    </div>
-                    <div style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--ink-2)', fontVariantNumeric: 'tabular-nums' }}>${planData[k].base}/user</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <div className="row" style={{ justifyContent: 'space-between', marginBottom: 8 }}>
-                <span className="field-label" style={{ marginBottom: 0 }}>Seats</span>
-                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-1)', fontVariantNumeric: 'tabular-nums' }}>{seats} users</span>
-              </div>
-              <input type="range" className="rng" min="1" max="100" value={seats} onChange={e => setSeats(+e.target.value)} />
-              <div className="row" style={{ justifyContent: 'space-between', fontSize: 10.5, color: 'var(--ink-4)', marginTop: 4 }}>
-                <span>1</span><span>25</span><span>50</span><span>75</span><span>100+</span>
-              </div>
-            </div>
-
-            <div className="divider" />
-
-            <div>
-              <div className="row" style={{ justifyContent: 'space-between', alignItems: 'baseline' }}>
-                <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>Base · {seats} × ${planData[plan].base}</span>
-                <span style={{ fontSize: 13, fontVariantNumeric: 'tabular-nums', color: 'var(--ink-2)' }}>${monthly.toLocaleString()}/mo</span>
-              </div>
-              {annual && (
-                <div className="row" style={{ justifyContent: 'space-between', alignItems: 'baseline', marginTop: 6 }}>
-                  <span style={{ fontSize: 12, color: 'var(--success)' }}>Annual discount (17%)</span>
-                  <span style={{ fontSize: 13, fontVariantNumeric: 'tabular-nums', color: 'var(--success)' }}>-${(monthly - annualMonthly).toLocaleString()}/mo</span>
-                </div>
-              )}
-              <div className="row" style={{ justifyContent: 'space-between', alignItems: 'baseline', marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--line-soft)' }}>
-                <div>
-                  <div style={{ fontSize: 11, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: 0.05, fontWeight: 600 }}>You pay</div>
-                  {annual && <div style={{ fontSize: 11, color: 'var(--success)', fontWeight: 500, marginTop: 2 }}>Save ${savings.toLocaleString()}/year</div>}
-                </div>
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: 28, fontWeight: 600, color: 'var(--ink-1)', letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>${effective.toLocaleString()}</div>
-                  <div style={{ fontSize: 11.5, color: 'var(--ink-4)', marginTop: 4 }}>/month, billed {annual ? 'annually' : 'monthly'}</div>
-                </div>
-              </div>
-            </div>
-
-            <button className="btn btn-primary btn-lg" style={{ width: '100%' }} onClick={ctaAction}>
-              {ctaLabel} <Icon name="arrow_right" size={13} />
+          <button className="btn btn-primary" style={{ width: '100%', height: 42, justifyContent: 'center' }} onClick={ctaAction} disabled={!selectedPlan}>
+            {mode === 'buyer' ? 'Subscribe' : 'Sign up to subscribe'} <Icon name="arrow_right" size={13} />
+          </button>
+          {mode === 'buyer' && methods.length === 0 && (
+            <button className="btn btn-secondary" style={{ width: '100%', height: 38, justifyContent: 'center', marginTop: 10 }} onClick={() => router.push('/buyer/settings')}>
+              Add payment method
             </button>
-            <button className="btn btn-secondary" style={{ width: '100%' }}>Talk to sales</button>
-            <div className="row gap-2" style={{ justifyContent: 'center', fontSize: 11, color: 'var(--ink-4)' }}>
-              <Icon name="shield" size={11} /> Cancel anytime · No setup fees
-            </div>
-          </div>
-        </div>
+          )}
+        </aside>
       </div>
 
-      {showCheckout && (
+      {showCheckout && selectedPlan && (
         <CheckoutModal
-          p={p}
-          plan={plan}
-          seats={seats}
-          annual={annual}
-          effective={effective}
+          product={product}
+          plan={selectedPlan}
+          methods={methods}
+          defaultEmail={session?.user.email ?? ''}
           submitting={submitting}
-          onClose={() => !submitting && setShowCheckout(false)}
+          onClose={() => setShowCheckout(false)}
           onConfirm={handleConfirm}
         />
       )}

@@ -64,7 +64,7 @@ export function useToastContext() {
 }
 
 export const ToastContext = React.createContext<{
-  toast: (msg: string, icon?: string) => void;
+  toast(msg: string, icon?: string): void;
 }>({ toast: () => {} });
 
 export type { ChromeRole };

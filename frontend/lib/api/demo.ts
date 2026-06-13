@@ -17,12 +17,10 @@ export async function withMockFallback<T>(
     const data = await retryOnTransient(real);
     return { data, mocked: false };
   } catch (err) {
-    const error = err as any;
     console.warn(
       `[demo-fallback] ${label} — backend unavailable, using mock data`,
-      error?.message ?? error,
+      err instanceof Error ? err.message : err,
     );
     return { data: await mock(), mocked: true };
   }
 }
-

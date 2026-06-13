@@ -5,20 +5,24 @@ import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import CardWallet from '@/components/buyer/CardWallet';
 import ConsentList from '@/components/buyer/ConsentList';
+import InvoiceList from '@/components/buyer/InvoiceList';
 import ProfilePanel from '@/components/buyer/ProfilePanel';
+import SubscriptionList from '@/components/buyer/SubscriptionList';
 import Icon from '@/components/Icon';
 
-type Tab = 'profile' | 'cards' | 'consents' | 'notifications';
+type Tab = 'profile' | 'subscriptions' | 'invoices' | 'cards' | 'consents' | 'notifications';
 
 export default function BuyerSettingsPage() {
   const [tab, setTab] = useState<Tab>('profile');
   const { data: session } = useSession();
 
-  const roles = ((session?.user as any)?.role ?? []) as string[];
+  const roles = session?.user.role ?? [];
   const showBecomeSeller = !roles.includes('SELLER');
 
   const tabs: { id: Tab; label: string; icon: Parameters<typeof Icon>[0]['name'] }[] = [
     { id: 'profile', label: 'Profile', icon: 'users' },
+    { id: 'subscriptions', label: 'Subscriptions', icon: 'package' },
+    { id: 'invoices', label: 'Invoices', icon: 'receipt' },
     { id: 'cards', label: 'Payment methods', icon: 'wallet' },
     { id: 'consents', label: 'Privacy & consents', icon: 'shield' },
     { id: 'notifications', label: 'Notifications', icon: 'bell' },
@@ -57,6 +61,8 @@ export default function BuyerSettingsPage() {
       </aside>
       <section style={{ maxWidth: 760 }}>
         {tab === 'profile' && <ProfilePanel />}
+        {tab === 'subscriptions' && <SubscriptionList />}
+        {tab === 'invoices' && <InvoiceList />}
         {tab === 'cards' && <CardWallet />}
         {tab === 'consents' && <ConsentList />}
         {tab === 'notifications' && (

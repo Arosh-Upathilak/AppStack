@@ -20,7 +20,7 @@ export default function PublicNav() {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  const { data: session }: any = useSession();
+  const { data: session } = useSession();
   const user = session?.user;
   const roles = (user?.role ?? []) as AppRole[];
   const userInitials = initials(user?.name, user?.email);

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { signIn } from "next-auth/react";
 import Icon from "@/components/Icon";
 import { isValidEmailAddressFormat } from "@/lib/utils";
@@ -12,6 +12,7 @@ import { useRoleRedirect } from "@/hook/useRoleRedirect";
 import GoogleSignInButton from "@/components/GoogleSignInButton";
 import { getRecaptchaToken } from "@/lib/recaptcha";
 import { retryOnTransient } from "@/lib/retry";
+import { getErrorMessage } from "@/lib/api/errors";
 
 type Step = "details" | "otp";
 
@@ -31,7 +32,6 @@ export default function RegisterPage() {
   const [verifyToken, setVerifyToken] = useState<string | null>(null);
   const [timer, setTimer] = useState(60);
   const [resendOtpSending, setResendOtpSending] = useState(false);
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // If the user is already authenticated, send them to their dashboard.
   useRoleRedirect();
@@ -79,17 +79,16 @@ export default function RegisterPage() {
         }),
       );
       setVerifyToken(response.data.verifyToken);
+      setTimer(60);
       setError("");
       setBusy(false);
       toast.success("Verification code sent");
       setStep("otp");
     } catch (error) {
-      const axiosError = error as any;
-      const message = axiosError.response?.data?.error || "OTP sent failed";
+      const message = getErrorMessage(error, "OTP sent failed");
 
       setError(message);
       toast.error(message);
-      console.log(error);
     } finally {
       setBusy(false);
     }
@@ -112,7 +111,7 @@ export default function RegisterPage() {
       toast.success("Account verified successfully");
 
 
-    const token = await getRecaptchaToken("login");
+      const token = await getRecaptchaToken("login");
       const response = await signIn("credentials", {
         email: formData.email,
         password: formData.password,
@@ -134,47 +133,25 @@ export default function RegisterPage() {
         toast.success("Account created successfully");
       }
     } catch (error) {
-      const axiosError = error as any;
-      const message =
-        axiosError.response?.data?.error || "OTP verification failed";
+      const message = getErrorMessage(error, "OTP verification failed");
 
       setError(message);
       toast.error(message);
-      console.log(error);
     } finally {
       setBusy(false);
     }
   };
 
-  const startTimer = () => {
-    // Clear previous interval
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-    }
-
-    setTimer(60);
-
-    intervalRef.current = setInterval(() => {
+  useEffect(() => {
+    if (step !== "otp" || timer <= 0) return;
+    const timeout = window.setTimeout(() => {
       setTimer((prev) => {
-        if (prev <= 1) {
-          clearInterval(intervalRef.current!);
-          return 0;
-        }
-
-        return prev - 1;
+        return Math.max(0, prev - 1);
       });
     }, 1000);
-  };
 
-  useEffect(() => {
-    startTimer();
-
-    return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-      }
-    };
-  }, []);
+    return () => window.clearTimeout(timeout);
+  }, [step, timer]);
 
   const resendOtp = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -186,12 +163,10 @@ export default function RegisterPage() {
         }),
       );
       toast.success("Verification code resent");
-      startTimer();
+      setTimer(60);
     } catch (error) {
-      const axiosError = error as any;
-      const message = axiosError.response?.data?.error || "OTP resend failed";
+      const message = getErrorMessage(error, "OTP resend failed");
       setError(message);
-      console.log(error);
     } finally {
       setResendOtpSending(false);
     }
@@ -326,19 +301,6 @@ export default function RegisterPage() {
                 )}
               </button>
             </form>
-
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                margin: "20px 0 14px",
-              }}
-            >
-              <div style={{ flex: 1, height: 1, background: "var(--line)" }} />
-              <span style={{ fontSize: 12, color: "var(--ink-4)" }}>or</span>
-              <div style={{ flex: 1, height: 1, background: "var(--line)" }} />
-            </div>
 
             <GoogleSignInButton callbackUrl="/" label="Sign up with Google" />
 

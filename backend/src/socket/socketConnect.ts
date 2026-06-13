@@ -8,7 +8,19 @@ const onlineUsers = new Map<string,string>();
 export const initSocket = (server: HttpServer) => {
   io = new Server(server, {
     cors: {
-      origin: process.env.FRONTEND_URL,
+      origin: (origin, callback) => {
+        if (!origin) return callback(null, true);
+        if (origin === process.env.FRONTEND_URL || origin === "http://localhost:3000") {
+          return callback(null, true);
+        }
+        if (
+          process.env.NODE_ENV === "development" &&
+          origin.startsWith("http://localhost:")
+        ) {
+          return callback(null, true);
+        }
+        return callback(new Error("Socket CORS: Origin not allowed"), false);
+      },
       credentials: true,
     },
   });
@@ -35,8 +47,8 @@ export const initSocket = (server: HttpServer) => {
       for (const [userId, socketId] of onlineUsers.entries()) {
         if (socketId === socket.id) {
           onlineUsers.delete(userId);
-          console.log("Delete UserId: ",userId)
-          console.log(onlineUsers)
+          console.log("Delete UserId: ", userId);
+          console.log(onlineUsers);
         }
       }
     });

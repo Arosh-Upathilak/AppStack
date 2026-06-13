@@ -9,6 +9,7 @@ import {
   Seller,
 } from "@/lib/api/sellers";
 import { useNotificationStore } from "@/store/useNotificationStore";
+import { getErrorMessage, getHttpStatus } from "@/lib/api/errors";
 
 interface Props {
   onCountChange?: (count: number) => void;
@@ -35,6 +36,7 @@ export default function PendingSellersTable({
   const [items, setItems] = useState<Seller[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [now] = useState(() => Date.now());
 
   const notifications = useNotificationStore((state) => state.notifications);
 
@@ -47,9 +49,9 @@ export default function PendingSellersTable({
       );
 
       setItems(pendingSellers);
-    } catch (error: any) {
+    } catch (error) {
       console.error(error);
-      if (error.response?.status === 403) {
+      if (getHttpStatus(error) === 403) {
         toast.error("Access Denied: Admin privileges required.");
       } else {
         toast.error("Failed to fetch sellers");
@@ -60,7 +62,11 @@ export default function PendingSellersTable({
   }, []);
 
   useEffect(() => {
-    refresh();
+    const timeout = window.setTimeout(() => {
+      void refresh();
+    }, 0);
+
+    return () => window.clearTimeout(timeout);
   }, [refresh]);
 
   useEffect(() => {
@@ -70,7 +76,11 @@ export default function PendingSellersTable({
     ).length;
 
     if (pendingCountFromNotifications > 0) {
-      refresh();
+      const timeout = window.setTimeout(() => {
+        void refresh();
+      }, 0);
+
+      return () => window.clearTimeout(timeout);
     }
   }, [notifications, refresh]);
 
@@ -93,12 +103,9 @@ export default function PendingSellersTable({
       removeSeller(sellerId);
 
       toast.success("Seller approved successfully");
-    } catch (error: any) {
+    } catch (error) {
       console.error(error);
-      const errMsg =
-        error.response?.data?.error ||
-        error.response?.data?.message ||
-        "Failed to approve seller";
+      const errMsg = getErrorMessage(error, "Failed to approve seller");
       toast.error(errMsg);
     } finally {
       setBusyId(null);
@@ -114,12 +121,9 @@ export default function PendingSellersTable({
       removeSeller(sellerId);
 
       toast.success("Seller rejected successfully");
-    } catch (error: any) {
+    } catch (error) {
       console.error(error);
-      const errMsg =
-        error.response?.data?.error ||
-        error.response?.data?.message ||
-        "Failed to reject seller";
+      const errMsg = getErrorMessage(error, "Failed to reject seller");
       toast.error(errMsg);
     } finally {
       setBusyId(null);
@@ -159,7 +163,7 @@ export default function PendingSellersTable({
         <tbody>
           {items.map((seller) => {
             const busy = busyId === seller.id;
-            const isNew = Date.now() - new Date(seller.createdAt).getTime() < 30000;
+            const isNew = now - new Date(seller.createdAt).getTime() < 30000;
 
             return (
               <tr

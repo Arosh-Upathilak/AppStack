@@ -78,7 +78,7 @@ const deleteNotification = asyncHandler(
       success: true,
       message: "Notification deleted successfully",
     });
-  }
+  },
 );
 
-export {deleteNotification, updateReadNotification, getNotifications}
+export { deleteNotification, updateReadNotification, getNotifications };

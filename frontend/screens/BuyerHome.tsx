@@ -12,8 +12,8 @@ export default function BuyerHome() {
   const user = session?.user;
   const displayName = user?.name || user?.email?.split('@')[0] || 'User';
 
-  const roles = ((session?.user as any)?.role ?? []) as string[];
-  const sellerStatus = (session?.user as any)?.sellerStatus ?? null;
+  const roles = session?.user.role ?? [];
+  const sellerStatus = session?.user.sellerStatus ?? null;
 
   const showBecomeSeller = !roles.includes('SELLER') && !sellerStatus;
 

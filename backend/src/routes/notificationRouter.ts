@@ -5,9 +5,9 @@ import { deleteNotification, getNotifications, updateReadNotification } from "..
 
 const notificationRouter = express.Router();
 
-notificationRouter.get("/getNotifications",authMiddleware,getNotifications)
-notificationRouter.post("/updateReadNotification",authMiddleware,updateReadNotification)
-notificationRouter.delete("/deleteNotification",authMiddleware,deleteNotification)
+notificationRouter.get("/getNotifications", authMiddleware, getNotifications);
+notificationRouter.post("/updateReadNotification", authMiddleware, updateReadNotification);
+notificationRouter.delete("/deleteNotification", authMiddleware, deleteNotification);
 
 
-export default notificationRouter
+export default notificationRouter;

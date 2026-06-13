@@ -8,6 +8,7 @@ import { toast } from "react-toastify";
 import { signOut } from "next-auth/react";
 import { useNotificationStore } from "@/store/useNotificationStore";
 import { markNotificationAsRead } from "@/lib/api/notification";
+import type { Notification } from "@/store/useNotificationStore";
 
 export default function AdminDashboardPage() {
   const router = useRouter();
@@ -24,7 +25,7 @@ export default function AdminDashboardPage() {
     signOut({ callbackUrl: "/" });
   };
 
-  const handleNotificationClick = async (item: any) => {
+  const handleNotificationClick = async (item: Notification) => {
     try {
       if (!item.isRead) {
         await markNotificationAsRead(item.id);
@@ -213,17 +214,49 @@ export default function AdminDashboardPage() {
           </div>
         </button>
 
-        <div className="card card-pad" style={{ opacity: 0.6 }}>
-          <div style={{ fontSize: 13, color: "var(--ink-4)" }}>Users</div>
+        <button
+          type="button"
+          onClick={() => router.push("/admin/users")}
+          className="card card-pad"
+          style={{
+            textAlign: "left",
+            cursor: "pointer",
+            background: "var(--surface)",
+            borderColor: "var(--line)",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+              marginBottom: 8,
+            }}
+          >
+            <div
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 10,
+                background: "var(--line)",
+                color: "var(--ink-1)",
+                display: "grid",
+                placeItems: "center",
+              }}
+            >
+              <Icon name="users" size={18} />
+            </div>
+            <div style={{ fontSize: 13, color: "var(--ink-4)" }}>Users</div>
+          </div>
           <div
             style={{
               fontSize: 28,
               fontWeight: 700,
               color: "var(--ink-1)",
-              marginTop: 8,
+              fontVariantNumeric: "tabular-nums",
             }}
           >
-            —
+            Manage
           </div>
           <div
             style={{
@@ -232,21 +265,53 @@ export default function AdminDashboardPage() {
               marginTop: 4,
             }}
           >
-            Coming soon
+            Review and delete accounts →
           </div>
-        </div>
+        </button>
 
-        <div className="card card-pad" style={{ opacity: 0.6 }}>
-          <div style={{ fontSize: 13, color: "var(--ink-4)" }}>Payouts</div>
+        <button
+          type="button"
+          onClick={() => router.push("/admin/payouts")}
+          className="card card-pad"
+          style={{
+            textAlign: "left",
+            cursor: "pointer",
+            background: "var(--surface)",
+            borderColor: "var(--line)",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+              marginBottom: 8,
+            }}
+          >
+            <div
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 10,
+                background: "var(--line)",
+                color: "var(--ink-1)",
+                display: "grid",
+                placeItems: "center",
+              }}
+            >
+              <Icon name="wallet" size={18} />
+            </div>
+            <div style={{ fontSize: 13, color: "var(--ink-4)" }}>Payouts</div>
+          </div>
           <div
             style={{
               fontSize: 28,
               fontWeight: 700,
               color: "var(--ink-1)",
-              marginTop: 8,
+              fontVariantNumeric: "tabular-nums",
             }}
           >
-            —
+            Pending
           </div>
           <div
             style={{
@@ -255,9 +320,9 @@ export default function AdminDashboardPage() {
               marginTop: 4,
             }}
           >
-            Coming soon
+            Review payout requests →
           </div>
-        </div>
+        </button>
       </div>
 
       <div

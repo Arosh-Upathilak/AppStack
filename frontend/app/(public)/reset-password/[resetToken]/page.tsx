@@ -7,6 +7,7 @@ import Icon from "@/components/Icon";
 import { toast } from "react-toastify";
 import axios from "axios";
 import { retryOnTransient } from "@/lib/retry";
+import { getErrorMessage } from "@/lib/api/errors";
 
 export default function ResetPage() {
   const router = useRouter();
@@ -36,11 +37,9 @@ export default function ResetPage() {
       setDone(true);
       setTimeout(() => router.push("/login"), 1500);
     } catch (error) {
-      const axiosError = error as any;
-      const message = axiosError.response?.data?.error || "Password reset failed";
+      const message = getErrorMessage(error, "Password reset failed");
       setError(message);
       toast.error(message);
-      console.log(error);
     } finally {
       setBusy(false);
     }

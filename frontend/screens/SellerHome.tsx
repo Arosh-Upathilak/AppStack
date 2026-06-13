@@ -1,11 +1,13 @@
 'use client';
 
 import React from 'react';
+import { useRouter } from 'next/navigation';
 import Icon from '@/components/Icon';
 import { useToastContext } from '@/components/DashboardChrome';
 
 export default function SellerHome() {
   const { toast } = useToastContext();
+  const router = useRouter();
 
   return (
     <div className="page screen-enter">
@@ -15,6 +17,9 @@ export default function SellerHome() {
           <p className="page-sub">Track your sales and payouts here.</p>
         </div>
         <div className="page-actions">
+          <button className="btn btn-primary" onClick={() => router.push('/seller/products')}>
+            <Icon name="package" size={13} /> Manage products
+          </button>
           <button className="btn btn-secondary" onClick={() => toast('Exported')}>
             <Icon name="download" size={13} /> Export
           </button>
@@ -98,7 +103,7 @@ export default function SellerHome() {
         <div className="card card-pad" style={{ background: 'var(--surface-muted)' }}>
           <h2 style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>Seller Overview</h2>
           <p style={{ fontSize: 13, color: 'var(--ink-3)', lineHeight: 1.5 }}>
-            This portal shows payout history and active balances. SaaS product management and subscription details are mocked in this version of the demo and are not backed by real APIs.
+            Product drafts, plans and admin approval are now backed by real APIs. Payout balances remain simulator data until the scheduled payment and payout phase.
           </p>
         </div>
       </div>

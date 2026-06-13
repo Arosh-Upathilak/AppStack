@@ -1,10 +1,7 @@
 "use client";
 import PendingSellersTable from "@/components/admin/PendingSellersTable";
-import { useState } from "react";
 
 export default function AdminPendingSellersPage() {
-  const [pendingCount, setPendingCount] = useState(0);
-
   return (
     <div className="page screen-enter">
       <div className="page-head">
@@ -17,7 +14,7 @@ export default function AdminPendingSellersPage() {
         </div>
       </div>
 
-      <PendingSellersTable onCountChange={setPendingCount}  />
+      <PendingSellersTable />
     </div>
   );
 }

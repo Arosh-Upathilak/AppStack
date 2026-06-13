@@ -1,16 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-
-interface Consent {
-  id: string;
-  type: string;
-  agreedAt: string;
-  ipAddress: string | null;
-  product: string;
-  plan: string;
-  recipientEmail: string;
-}
+import { listConsents } from '@/lib/api/billing';
+import { getErrorMessage } from '@/lib/api/errors';
+import type { Consent } from '@/lib/api/types';
 
 const TYPE_LABEL: Record<string, string> = {
   SHARE_EMAIL: 'Email shared with vendor',
@@ -20,13 +13,18 @@ const TYPE_LABEL: Record<string, string> = {
 export default function ConsentList() {
   const [consents, setConsents] = useState<Consent[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
-      const r = await fetch('/api/consents');
-      const j = await r.json();
-      setConsents(j.consents ?? []);
-      setLoading(false);
+      try {
+        const records = await listConsents();
+        setConsents(records ?? []);
+      } catch (err) {
+        setError(getErrorMessage(err, 'Failed to load consent records'));
+      } finally {
+        setLoading(false);
+      }
     })();
   }, []);
 
@@ -38,6 +36,12 @@ export default function ConsentList() {
           For GDPR transparency, we record every consent you grant when subscribing.
         </div>
       </div>
+
+      {error && (
+        <div style={{ color: 'var(--danger,#dc2626)', fontSize: 13, marginBottom: 12 }}>
+          {error}
+        </div>
+      )}
 
       {loading ? (
         <div className="muted" style={{ fontSize: 13 }}>Loading…</div>

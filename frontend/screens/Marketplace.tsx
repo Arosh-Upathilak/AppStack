@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation';
 import Icon from '@/components/Icon';
 import AppLogo from '@/components/AppLogo';
 import Badge from '@/components/Badge';
-import { PRODUCTS, CATEGORIES, Product } from '@/data/mock';
+import { listCategories, listProducts } from '@/lib/api/products';
+import type { Product } from '@/lib/api/types';
 
 interface MarketplaceProps {
   /** 'buyer' shows Subscribe CTA; 'public' shows "Sign up" CTA */
@@ -23,6 +24,7 @@ function PromoStat({ label, value }: { label: string; value: string }) {
 
 function ProductCard({ p, onClick }: { p: Product; onClick: () => void }) {
   const [hovered, setHovered] = React.useState(false);
+  const integrations = p.similarTo.length > 0 ? p.similarTo : ['REST API'];
   return (
     <div className="card"
          style={{ padding: 20, cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 14,
@@ -35,27 +37,27 @@ function ProductCard({ p, onClick }: { p: Product; onClick: () => void }) {
          onMouseLeave={() => setHovered(false)}>
       <div className="row" style={{ alignItems: 'flex-start', justifyContent: 'space-between' }}>
         <AppLogo name={p.name} hue={p.hue} size="lg" />
-        {p.badge && <Badge tone={p.badge.includes('Pick') ? 'accent' : 'brand'}>{p.badge}</Badge>}
+        <Badge tone="brand">{p.status === 'APPROVED' ? 'Approved' : p.status}</Badge>
       </div>
       <div>
         <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink-1)', letterSpacing: '-0.005em' }}>{p.name}</div>
         <div style={{ fontSize: 12, color: 'var(--ink-4)', marginTop: 2 }}>{p.vendor} · {p.category}</div>
       </div>
-      <p style={{ margin: 0, fontSize: 13, color: 'var(--ink-3)', lineHeight: 1.5, minHeight: 40 }}>{p.tagline}</p>
+      <p style={{ margin: 0, fontSize: 13, color: 'var(--ink-3)', lineHeight: 1.5, minHeight: 40 }}>{p.shortDescription}</p>
       <div className="row gap-2" style={{ flexWrap: 'wrap' }}>
         <span className="row gap-1" style={{ display: 'inline-flex', alignItems: 'center', fontSize: 12 }}>
           <Icon name="star" size={12} stroke={0} style={{ fill: '#f59e0b', color: '#f59e0b' }} />
-          <strong>{p.rating}</strong>
-          <span className="muted">({p.reviews.toLocaleString()})</span>
+          <strong>{p.rating || 'New'}</strong>
+          <span className="muted">({p.reviewsCount.toLocaleString()})</span>
         </span>
         <span style={{ color: 'var(--ink-5)' }}>·</span>
-        <span style={{ fontSize: 12, color: 'var(--ink-4)' }}>{p.integrations.join(' · ')}</span>
+        <span style={{ fontSize: 12, color: 'var(--ink-4)' }}>{integrations.join(' · ')}</span>
       </div>
       <div className="row" style={{ alignItems: 'center', justifyContent: 'space-between', paddingTop: 14, borderTop: '1px solid var(--line-soft)' }}>
         <div>
           <div style={{ fontSize: 11, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: 0.05, fontWeight: 600 }}>Starting at</div>
           <div style={{ fontSize: 18, fontWeight: 600, color: 'var(--ink-1)', fontVariantNumeric: 'tabular-nums' }}>
-            ${p.from}<span style={{ color: 'var(--ink-4)', fontSize: 12, fontWeight: 500 }}>/user/mo</span>
+            ${(p.fromCents / 100).toLocaleString()}<span style={{ color: 'var(--ink-4)', fontSize: 12, fontWeight: 500 }}>/mo</span>
           </div>
         </div>
         <button className="btn btn-soft btn-sm">View details <Icon name="arrow_right" size={11} /></button>
@@ -70,10 +72,39 @@ export default function Marketplace({ mode = 'buyer' }: MarketplaceProps) {
   const [sort, setSort] = React.useState('Popular');
   const [view, setView] = React.useState<'grid' | 'list'>('grid');
   const [query, setQuery] = React.useState('');
+  const [items, setItems] = React.useState<Product[]>([]);
+  const [categories, setCategories] = React.useState<string[]>(['All']);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
 
-  let items = PRODUCTS;
-  if (cat !== 'All') items = items.filter(p => p.category === cat);
-  if (query) items = items.filter(p => p.name.toLowerCase().includes(query.toLowerCase()) || p.vendor.toLowerCase().includes(query.toLowerCase()));
+  React.useEffect(() => {
+    let cancelled = false;
+    const timeout = window.setTimeout(() => {
+      setLoading(true);
+      setError(null);
+      Promise.all([listProducts({ category: cat, query }), listCategories()])
+        .then(([products, cats]) => {
+          if (cancelled) return;
+          const sorted = [...products].sort((a, b) => {
+            if (sort === 'Top rated') return b.rating - a.rating;
+            if (sort === 'New') return new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime();
+            return b.reviewsCount - a.reviewsCount;
+          });
+          setItems(sorted);
+          setCategories(cats);
+        })
+        .catch(() => {
+          if (!cancelled) setError('Could not load marketplace products.');
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false);
+        });
+    }, 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+    };
+  }, [cat, query, sort]);
 
   const basePath = mode === 'buyer' ? '/buyer/marketplace' : '/marketplace';
   const handleProductClick = (id: string) => router.push(`${basePath}/${id}`);
@@ -120,7 +151,7 @@ export default function Marketplace({ mode = 'buyer' }: MarketplaceProps) {
 
       <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginBottom: 20, flexWrap: 'wrap' }}>
         <div className="row gap-2" style={{ flexWrap: 'wrap' }}>
-          {CATEGORIES.map(c => (
+          {categories.map(c => (
             <button key={c} className={`pill ${cat === c ? 'active' : ''}`} onClick={() => setCat(c)}>
               {c}{cat === c && c !== 'All' && <Icon name="x" size={11} />}
             </button>
@@ -141,10 +172,16 @@ export default function Marketplace({ mode = 'buyer' }: MarketplaceProps) {
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, fontSize: 13, color: 'var(--ink-3)' }}>
         <span><strong style={{ color: 'var(--ink-1)' }}>{items.length}</strong> {cat === 'All' ? 'apps' : cat} found</span>
-        <span className="muted">Updated 4 minutes ago</span>
+        <span className="muted">{loading ? 'Loading...' : 'Live catalog'}</span>
       </div>
 
-      {view === 'grid' ? (
+      {error && (
+        <div className="card" style={{ padding: 16, color: 'var(--danger,#dc2626)', marginBottom: 16 }}>{error}</div>
+      )}
+
+      {loading ? (
+        <div className="card card-pad">Loading marketplace...</div>
+      ) : view === 'grid' ? (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
           {items.map(p => <ProductCard key={p.id} p={p} onClick={() => handleProductClick(p.id)} />)}
         </div>
@@ -168,7 +205,7 @@ export default function Marketplace({ mode = 'buyer' }: MarketplaceProps) {
                       <AppLogo name={p.name} hue={p.hue} size="sm" />
                       <div>
                         <div style={{ fontWeight: 600, color: 'var(--ink-1)' }}>{p.name}</div>
-                        <div className="muted" style={{ fontSize: 12 }}>{p.tagline}</div>
+                        <div className="muted" style={{ fontSize: 12 }}>{p.shortDescription}</div>
                       </div>
                     </div>
                   </td>
@@ -176,11 +213,11 @@ export default function Marketplace({ mode = 'buyer' }: MarketplaceProps) {
                   <td>
                     <span className="row gap-1" style={{ display: 'inline-flex', alignItems: 'center' }}>
                       <Icon name="star" size={12} stroke={0} style={{ fill: '#f59e0b', color: '#f59e0b' }} />
-                      <strong style={{ color: 'var(--ink-1)' }}>{p.rating}</strong>
-                      <span className="muted">· {p.reviews.toLocaleString()}</span>
+                      <strong style={{ color: 'var(--ink-1)' }}>{p.rating || 'New'}</strong>
+                      <span className="muted">· {p.reviewsCount.toLocaleString()}</span>
                     </span>
                   </td>
-                  <td className="num" style={{ fontWeight: 600, color: 'var(--ink-1)' }}>${p.from}<span className="muted" style={{ fontWeight: 400 }}>/mo</span></td>
+                  <td className="num" style={{ fontWeight: 600, color: 'var(--ink-1)' }}>${(p.fromCents / 100).toLocaleString()}<span className="muted" style={{ fontWeight: 400 }}>/mo</span></td>
                   <td className="col-action"><button className="btn btn-secondary btn-sm">View <Icon name="arrow_right" size={11} /></button></td>
                 </tr>
               ))}

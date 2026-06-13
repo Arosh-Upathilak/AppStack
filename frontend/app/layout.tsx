@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { getServerSession } from "next-auth/next";
+import { authOptions } from "@/utils/authOptions";
 import SessionTimeoutWrapper from "@/utils/SessionTimeoutWrapper";
 import SessionProvider from "@/utils/SessionProvider";
 import ToastProvider from "@/utils/ToastProvider";
@@ -30,7 +31,7 @@ export default async function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const session = await getServerSession();
+  const session = await getServerSession(authOptions);
   return (
     <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable}`}>
       <body>

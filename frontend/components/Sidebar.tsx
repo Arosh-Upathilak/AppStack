@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import { toast } from "react-toastify";
 import Icon from "./Icon";
-import type { AppRole, SellerStatus } from "@/types/next-auth";
+import type { SellerStatus } from "@/types/next-auth";
 import { useNotificationStore } from "@/store/useNotificationStore";
 
 interface SidebarProps {
@@ -22,12 +22,19 @@ interface NavItem {
 
 const sellerNav: NavItem[] = [
   { href: "/seller", label: "Overview", icon: "home", exact: true },
+  { href: "/seller/products", label: "Products", icon: "package" },
+  { href: "/seller/earnings", label: "Earnings & Payouts", icon: "wallet" },
   { href: "/seller/settings", label: "Settings", icon: "settings" },
 ];
 
 const adminNav: NavItem[] = [
   { href: "/admin", label: "Dashboard", icon: "home", exact: true },
   { href: "/admin/sellers/pending", label: "Pending Sellers", icon: "package" },
+  { href: "/admin/products/pending", label: "Pending Products", icon: "store" },
+  { href: "/admin/cancellations", label: "Pending Cancellations", icon: "trash" },
+  { href: "/admin/refunds", label: "Pending Refunds", icon: "refresh" },
+  { href: "/admin/payouts", label: "Payout Requests", icon: "wallet" },
+  { href: "/admin/users", label: "Users", icon: "users" },
 ];
 
 const PORTAL_LABEL: Record<SidebarProps["role"], string> = {
@@ -48,9 +55,9 @@ function SellerCta({ context }: { context: "buyer" | "seller" | "admin" }) {
   const { data: session } = useSession();
   if (context === "admin") return null;
 
-  const roles = ((session?.user as any)?.role ?? []) as AppRole[];
+  const roles = session?.user.role ?? [];
   const sellerStatus =
-    ((session?.user as any)?.sellerStatus as SellerStatus | null | undefined) ??
+    (session?.user.sellerStatus as SellerStatus | null | undefined) ??
     null;
 
   const isSeller = roles.includes("SELLER");
@@ -176,8 +183,6 @@ export default function Sidebar({ role }: SidebarProps) {
 
   const isActive = (item: NavItem) =>
     item.exact ? pathname === item.href : pathname.startsWith(item.href);
-
-  const primaryCta: { href: string; label: string } | null = null;
 
   return (
     <aside className="sidebar">

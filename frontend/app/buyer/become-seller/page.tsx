@@ -6,29 +6,34 @@ import { useSession } from "next-auth/react";
 import { toast } from "react-toastify";
 import Icon from "@/components/Icon";
 import { submitSellerApplication } from "@/lib/api/sellers";
+import { getErrorMessage } from "@/lib/api/errors";
 
 export default function BecomeSellerPage() {
   const router = useRouter();
   const { data: session, status } = useSession();
 
   const [businessName, setBusinessName] = useState("");
-  const [payoutEmail, setPayoutEmail] = useState("");
   const [aboutProject, setAboutProject] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
+  const [gdprAccepted, setGdprAccepted] = useState(false);
+  const payoutEmail = session?.user.email ?? "";
 
   useEffect(() => {
     if (status !== "authenticated") return;
-    const roles = (session?.user?.role ?? []) as string[];
+    const roles = session?.user.role ?? [];
     if (roles.includes("SELLER")) {
       router.replace("/seller");
     }
-    setPayoutEmail(session?.user?.email as string);
   }, [status, session, router]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (!gdprAccepted) {
+      toast.error("You must accept the Seller Data Protection Agreement.");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -40,6 +45,7 @@ export default function BecomeSellerPage() {
 
       setBusinessName("");
       setAboutProject("");
+      setGdprAccepted(false);
 
       setSubmitted(true);
 
@@ -48,10 +54,10 @@ export default function BecomeSellerPage() {
           "Application submitted — we'll email you once reviewed.",
       );
     } catch (err) {
-      const axiosError = err as any;
-      const message =
-        axiosError?.message ||
-        "Could not submit application. Please try again.";
+      const message = getErrorMessage(
+        err,
+        "Could not submit application. Please try again.",
+      );
       setError(message);
       toast.error(message);
     } finally {
@@ -152,6 +158,31 @@ export default function BecomeSellerPage() {
             />
           </div>
 
+          {/* Seller GDPR Compliance / DPA agreement */}
+          <div className="flex flex-col gap-2 rounded-lg border border-line bg-surface-muted p-4">
+            <h3 className="text-sm font-semibold text-ink-1">Seller Data Protection Agreement</h3>
+            <div className="max-h-[120px] overflow-y-auto rounded border border-line bg-surface p-2.5 text-xs text-ink-3 leading-relaxed">
+              This Data Protection Agreement (&quot;DPA&quot;) governs the processing of buyer personal data by the Seller. By checking the box below, you agree to:
+              <ul className="list-disc pl-4 mt-1 space-y-1">
+                <li>Comply with all applicable data protection laws, including GDPR and CCPA.</li>
+                <li>Ensure that all buyer emails shared with your platform are strictly used for subscription provisioning and support.</li>
+                <li>Never share, rent, or sell buyer personal identifier fields to any third party.</li>
+                <li>Implement and maintain appropriate administrative, technical, and physical security measures to safeguard buyer data.</li>
+                <li>Immediately notify AppStack within 24 hours of discovering any data breach or unauthorized access to buyer details.</li>
+              </ul>
+            </div>
+            <label className="mt-2.5 flex items-start gap-2.5 text-[13px] text-ink-2 cursor-pointer leading-normal">
+              <input
+                type="checkbox"
+                required
+                className="mt-0.5 rounded border-line text-brand focus:ring-brand"
+                checked={gdprAccepted}
+                onChange={(e) => setGdprAccepted(e.target.checked)}
+              />
+              <span>I have read and agree to the Seller Data Protection Agreement and understand that consent is recorded permanently.</span>
+            </label>
+          </div>
+
           {error && (
             <div className="text-[13px] leading-relaxed text-danger">
               {error}
@@ -168,7 +199,7 @@ export default function BecomeSellerPage() {
             </button>
             <button
               type="submit"
-              disabled={busy}
+              disabled={busy || !gdprAccepted}
               className="inline-flex h-[42px] flex-1 items-center justify-center gap-2 rounded-md bg-brand px-5 text-sm font-semibold text-white transition-colors hover:bg-brand-hover disabled:opacity-60"
             >
               {busy ? (

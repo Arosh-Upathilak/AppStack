@@ -2,42 +2,53 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Icon from '@/components/Icon';
-
-interface Method {
-  id: string;
-  brand: string;
-  last4: string;
-  expMonth: number;
-  expYear: number;
-  isPrimary: boolean;
-}
+import {
+  createPaymentMethod,
+  deletePaymentMethod,
+  listPaymentMethods,
+  setPrimaryPaymentMethod,
+} from '@/lib/api/billing';
+import { getErrorMessage } from '@/lib/api/errors';
+import type { PaymentMethod } from '@/lib/api/types';
 
 export default function CardWallet() {
-  const [methods, setMethods] = useState<Method[]>([]);
+  const [methods, setMethods] = useState<PaymentMethod[]>([]);
   const [stripeEnabled, setStripeEnabled] = useState(false);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
-    setLoading(true);
-    const r = await fetch('/api/payment-methods');
-    const j = await r.json();
-    setMethods(j.methods ?? []);
-    setStripeEnabled(!!j.stripeEnabled);
-    setLoading(false);
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await listPaymentMethods();
+      setMethods(response.methods ?? []);
+      setStripeEnabled(!!response.stripeEnabled);
+    } catch (err) {
+      setError(getErrorMessage(err, 'Failed to load payment methods'));
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  useEffect(() => { reload(); }, [reload]);
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      void reload();
+    }, 0);
+
+    return () => window.clearTimeout(timeout);
+  }, [reload]);
 
   async function setPrimary(id: string) {
-    await fetch(`/api/payment-methods/${id}/primary`, { method: 'POST' });
-    reload();
+    await setPrimaryPaymentMethod(id);
+    void reload();
   }
 
   async function remove(id: string) {
     if (!confirm('Remove this card?')) return;
-    await fetch(`/api/payment-methods/${id}`, { method: 'DELETE' });
-    reload();
+    await deletePaymentMethod(id);
+    void reload();
   }
 
   return (
@@ -53,6 +64,12 @@ export default function CardWallet() {
           <Icon name="plus" size={13} /> Add card
         </button>
       </div>
+
+      {error && (
+        <div style={{ color: 'var(--danger,#dc2626)', fontSize: 13, marginBottom: 12 }}>
+          {error}
+        </div>
+      )}
 
       {loading ? (
         <div className="muted" style={{ fontSize: 13 }}>Loading…</div>
@@ -89,7 +106,7 @@ export default function CardWallet() {
         </div>
       )}
 
-      {showAdd && <AddCardModal onClose={() => setShowAdd(false)} onAdded={() => { setShowAdd(false); reload(); }} stripeEnabled={stripeEnabled} />}
+      {showAdd && <AddCardModal onClose={() => setShowAdd(false)} onAdded={() => { setShowAdd(false); void reload(); }} stripeEnabled={stripeEnabled} />}
     </div>
   );
 }
@@ -109,18 +126,21 @@ function AddCardModal({ onClose, onAdded, stripeEnabled }: { onClose: () => void
     const expMonth = parseInt(mm, 10);
     const expYear = 2000 + parseInt(yy, 10);
     setBusy(true); setError(null);
-    const res = await fetch('/api/payment-methods', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ number: number.replace(/\s+/g, ''), expMonth, expYear, cvc, setAsPrimary: setPrimary }),
-    });
-    setBusy(false);
-    if (!res.ok) {
-      const j = await res.json().catch(() => ({}));
-      setError(j.error || 'Failed to add card.');
+    try {
+      await createPaymentMethod({
+        number: number.replace(/\s+/g, ''),
+        expMonth,
+        expYear,
+        cvc,
+        setAsPrimary: setPrimary,
+      });
+      setBusy(false);
+      onAdded();
+    } catch (err) {
+      setBusy(false);
+      setError(getErrorMessage(err, 'Failed to add card.'));
       return;
     }
-    onAdded();
   }
 
   return (

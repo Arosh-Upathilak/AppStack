@@ -2,7 +2,6 @@ import type { Metadata } from 'next';
 import Hero from '@/components/public/Hero';
 import LogoMarquee from '@/components/public/LogoMarquee';
 import StatsBand from '@/components/public/StatsBand';
-import FeatureRows from '@/components/public/FeatureRows';
 import SubFeatures from '@/components/public/SubFeatures';
 import StepsRail from '@/components/public/StepsRail';
 import Testimonials from '@/components/public/Testimonials';

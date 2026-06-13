@@ -30,7 +30,7 @@ export function useGoogleAuthToast() {
     sessionStorage.removeItem("pendingGoogleAuth");
     toast.success("Signed in with Google");
 
-    const roles = ((session?.user as any)?.role ?? []) as string[];
+    const roles = session?.user.role ?? [];
     if (roles.includes("ADMIN")) {
       router.replace("/admin");
     }

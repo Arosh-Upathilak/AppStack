@@ -67,3 +67,71 @@ export async function approveSeller(
     },
   );
 }
+
+export interface EarningsSummary {
+  totalSalesCents: number;
+  totalRefundsCents: number;
+  lockedCents: number;
+  withdrawableCents: number;
+  withdrawnCents: number;
+  pendingPayoutsCents: number;
+}
+
+export interface GetEarningsSummaryResponse {
+  success: boolean;
+  summary: EarningsSummary;
+}
+
+export interface Transaction {
+  id: string;
+  sellerId: string;
+  amountCents: number;
+  type: "SALE" | "REFUND" | "PAYOUT" | "ADJUSTMENT";
+  status: "LOCKED" | "AVAILABLE" | "WITHDRAWN";
+  description: string;
+  invoiceId?: string | null;
+  payoutId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  invoice?: {
+    number: string;
+  } | null;
+}
+
+export interface GetTransactionsResponse {
+  success: boolean;
+  transactions: Transaction[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    pages: number;
+  };
+}
+
+export async function getSellerEarningsSummary(): Promise<GetEarningsSummaryResponse> {
+  const headers = await userAuthorization();
+  const response = await axios.get<GetEarningsSummaryResponse>(
+    `${API_BASE}/seller/earnings/summary`,
+    { headers, withCredentials: true }
+  );
+  return response.data;
+}
+
+export async function getSellerTransactions(page = 1, limit = 10): Promise<GetTransactionsResponse> {
+  const headers = await userAuthorization();
+  const response = await axios.get<GetTransactionsResponse>(
+    `${API_BASE}/seller/earnings/transactions?page=${page}&limit=${limit}`,
+    { headers, withCredentials: true }
+  );
+  return response.data;
+}
+
+export async function requestPayout(amountCents: number, payoutEmail?: string) {
+  const headers = await userAuthorization();
+  return axios.post(
+    `${API_BASE}/seller/payouts/request`,
+    { amountCents, payoutEmail },
+    { headers, withCredentials: true }
+  );
+}

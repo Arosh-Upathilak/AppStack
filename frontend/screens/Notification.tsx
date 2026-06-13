@@ -6,7 +6,6 @@ import {
   getNotifications,
   markNotificationAsRead,
   deleteNotification,
-  Notification,
 } from "@/lib/api/notification";
 import { useNotificationStore } from "@/store/useNotificationStore";
 import Icon from "@/components/Icon";

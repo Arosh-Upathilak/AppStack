@@ -11,8 +11,8 @@ const SITE_KEY = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY;
 declare global {
   interface Window {
     grecaptcha?: {
-      ready: (cb: () => void) => void;
-      execute: (siteKey: string, opts: { action: string }) => Promise<string>;
+      ready(callback: () => void): void;
+      execute(siteKey: string, opts: { action: string }): Promise<string>;
     };
   }
 }

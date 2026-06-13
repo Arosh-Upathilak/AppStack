@@ -8,10 +8,10 @@ export async function generateMetadata({ params }: { params: Promise<{ productId
   if (!product) return { title: 'Product · AppStack' };
   return {
     title: `${product.name} · AppStack`,
-    description: product.tagline,
+    description: product.shortDescription,
     openGraph: {
       title: `${product.name} · AppStack`,
-      description: product.tagline,
+      description: product.shortDescription,
       type: 'website',
     },
   };

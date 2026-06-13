@@ -16,7 +16,6 @@ export default function StepsRail() {
   React.useEffect(() => {
     const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (prefersReduced) {
-      setActiveIdx(0);
       return;
     }
     const rail = railRef.current;

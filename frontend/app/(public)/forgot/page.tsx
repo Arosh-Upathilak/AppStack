@@ -8,6 +8,7 @@ import { isValidEmailAddressFormat } from "@/lib/utils";
 import axios from "axios";
 import { getRecaptchaToken } from "@/lib/recaptcha";
 import { retryOnTransient } from "@/lib/retry";
+import { getErrorMessage } from "@/lib/api/errors";
 
 export default function ForgotPage() {
   const [email, setEmail] = useState("");
@@ -44,12 +45,10 @@ export default function ForgotPage() {
       toast.success("Password reset link sent to your email");
       setDone(true);
     } catch (error) {
-      const axiosError = error as any;
-      const message = axiosError.response?.data?.error || "Forgot email sent failed";
+      const message = getErrorMessage(error, "Forgot email sent failed");
 
       setError(message);
       toast.error(message);
-      console.log(error);
     } finally {
       setBusy(false);
     }
@@ -84,6 +83,17 @@ export default function ForgotPage() {
               required
               autoComplete="email"
             />
+            {error && (
+              <div
+                style={{
+                  marginTop: 12,
+                  color: "var(--danger,#dc2626)",
+                  fontSize: 13,
+                }}
+              >
+                {error}
+              </div>
+            )}
             <button
               type="submit"
               className="btn btn-primary"

@@ -1,16 +1,28 @@
 "use client";
-import { useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
+import { toast } from "react-toastify";
 import { useNotificationStore } from "@/store/useNotificationStore";
 import { getSocket } from "@/lib/socket";
 import { getNotifications } from "@/lib/api/notification";
+import type { Notification } from "@/store/useNotificationStore";
+
+function isSellerDecision(notification: Notification) {
+  return (
+    notification.type === "SELLER_APPROVED" ||
+    notification.type === "SELLER_REJECTED"
+  );
+}
 
 export default function NotificationProvider({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const { data: session } = useSession();
+  const router = useRouter();
+  const processedSellerDecisions = useRef(new Set<string>());
+  const { data: session, update } = useSession();
 
   const addNotification = useNotificationStore(
     (state) => state.addNotification,
@@ -18,6 +30,40 @@ export default function NotificationProvider({
 
   const setNotifications = useNotificationStore(
     (state) => state.setNotifications,
+  );
+
+  const refreshSellerSession = useCallback(
+    async (notification: Notification, showToast: boolean) => {
+      if (!isSellerDecision(notification)) return;
+      if (processedSellerDecisions.current.has(notification.id)) return;
+
+      processedSellerDecisions.current.add(notification.id);
+
+      await update({ refreshUser: true });
+      router.refresh();
+
+      if (notification.type === "SELLER_APPROVED" && showToast) {
+        toast.success(
+          <div style={{ display: "grid", gap: 8 }}>
+            <span>Your seller application was approved.</span>
+            <button
+              type="button"
+              className="btn btn-primary"
+              style={{ height: 34, justifyContent: "center" }}
+              onClick={() => router.push("/seller")}
+            >
+              Open seller dashboard
+            </button>
+          </div>,
+          { autoClose: 9000 },
+        );
+      }
+
+      if (notification.type === "SELLER_REJECTED" && showToast) {
+        toast.error("Your seller application was rejected. You can reapply from the buyer dashboard.");
+      }
+    },
+    [router, update],
   );
 
   useEffect(() => {
@@ -37,7 +83,7 @@ export default function NotificationProvider({
   }, []);
 
   useEffect(() => {
-    const accessToken = (session as any)?.accessToken;
+    const accessToken = session?.accessToken;
 
     if (!accessToken) return;
 
@@ -46,6 +92,14 @@ export default function NotificationProvider({
       .then((res) => {
         if (res.success && res.notifications) {
           setNotifications(res.notifications);
+          const sellerDecision = res.notifications.find(
+            (notification) =>
+              isSellerDecision(notification) && !notification.isRead,
+          );
+
+          if (sellerDecision) {
+            void refreshSellerSession(sellerDecision, true);
+          }
         }
       })
       .catch((err) => {
@@ -56,8 +110,9 @@ export default function NotificationProvider({
 
     socket.emit("register", accessToken);
 
-    const handleNotification = (notification: any) => {
+    const handleNotification = (notification: Notification) => {
       addNotification(notification);
+      void refreshSellerSession(notification, true);
     };
 
     socket.on("notification", handleNotification);
@@ -65,7 +120,7 @@ export default function NotificationProvider({
     return () => {
       socket.off("notification", handleNotification);
     };
-  }, [session, addNotification, setNotifications]);
+  }, [session, addNotification, refreshSellerSession, setNotifications]);
 
   return <>{children}</>;
 }

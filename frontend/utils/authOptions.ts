@@ -3,10 +3,32 @@ import { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import GoogleProvider from "next-auth/providers/google";
 import { retryOnTransient } from "@/lib/retry";
-import { getRecaptchaToken } from "@/lib/recaptcha";
+import { getErrorMessage } from "@/lib/api/errors";
+import type { AppRole, SellerStatus } from "@/types/next-auth";
 
 const MAX_SESSION_AGE = 30 * 24 * 60 * 60; // 30 days
 const INACTIVE_TIMEOUT = 7 * 24 * 60 * 60; // 7 days
+const googleClientId = process.env.NEXT_GOOGLE_CLIENT_ID;
+const googleClientSecret = process.env.NEXT_GOOGLE_CLIENT_SECRET;
+const apiBase =
+  process.env.API_INTERNAL_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL;
+
+interface BackendUser {
+  id: string;
+  email?: string | null;
+  role: AppRole[];
+  sellerStatus?: SellerStatus | null;
+}
+
+interface AuthResponse {
+  user?: BackendUser;
+  accessToken?: string;
+}
+
+interface SessionUpdatePayload {
+  activity?: boolean;
+  refreshUser?: boolean;
+}
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -20,15 +42,15 @@ export const authOptions: NextAuthOptions = {
         token: { label: "reCAPTCHA token", type: "text" },
       },
 
-      async authorize(credentials: any) {
+      async authorize(credentials) {
         try {
           if (!credentials?.email || !credentials?.password) {
             return null;
           }
 
           const response = await retryOnTransient(() =>
-            axios.post(
-              `${process.env.NEXT_PUBLIC_API_BASE_URL}/auth/loginUser`,
+            axios.post<AuthResponse>(
+              `${apiBase}/auth/loginUser`,
               {
                 email: credentials.email,
                 password: credentials.password,
@@ -44,21 +66,26 @@ export const authOptions: NextAuthOptions = {
 
           return {
             ...user,
+            email: user.email ?? credentials.email,
             accessToken,
           };
-        } catch (err: any) {
-          throw new Error(err.response?.data?.error || "Login failed");
+        } catch (err) {
+          throw new Error(getErrorMessage(err, "Login failed"));
         }
       },
     }),
 
-    GoogleProvider({
-      clientId: process.env.NEXT_GOOGLE_CLIENT_ID ?? "",
-      clientSecret: process.env.NEXT_GOOGLE_CLIENT_SECRET ?? "",
-      authorization: {
-        params: { prompt: "select_account" },
-      },
-    }),
+    ...(googleClientId && googleClientSecret
+      ? [
+          GoogleProvider({
+            clientId: googleClientId,
+            clientSecret: googleClientSecret,
+            authorization: {
+              params: { prompt: "select_account" },
+            },
+          }),
+        ]
+      : []),
   ],
 
   callbacks: {
@@ -68,8 +95,8 @@ export const authOptions: NextAuthOptions = {
       try {
 
         const res = await retryOnTransient(() =>
-          axios.post(
-            `${process.env.NEXT_PUBLIC_API_BASE_URL}/auth/google-login`,
+          axios.post<AuthResponse>(
+            `${apiBase}/auth/google-login`,
             {
               email: user.email,
               name: user.name,
@@ -81,17 +108,17 @@ export const authOptions: NextAuthOptions = {
         const backendUser = res.data?.user;
         const backendAccessToken = res.data?.accessToken;
         if (backendUser) {
-          (user as any).id = backendUser.id;
-          (user as any).role = backendUser.role;
-          (user as any).sellerStatus = backendUser.sellerStatus ?? null;
-          (user as any).accessToken = backendAccessToken;
+          user.id = backendUser.id;
+          user.role = backendUser.role;
+          user.sellerStatus = backendUser.sellerStatus ?? null;
+          user.accessToken = backendAccessToken;
         }
       } catch (err) {
         console.warn(
           "[next-auth] /auth/google-login not available — using BUYER stub",
-          (err as any)?.message,
+          err instanceof Error ? err.message : err,
         );
-        console.error("Google login failed")
+        console.error("Google login failed");
       }
 
       return true;
@@ -99,21 +126,46 @@ export const authOptions: NextAuthOptions = {
 
     async jwt({ token, user, trigger, session }) {
       const now = Math.floor(Date.now() / 1000);
+      const updatePayload = session as SessionUpdatePayload | undefined;
 
       // Initial login
       if (user) {
-        token.id = (user as any).id;
-        token.role = (user as any).role;
-        token.sellerStatus = (user as any).sellerStatus ?? null;
-        token.accessToken = (user as any).accessToken;
+        token.id = user.id;
+        token.role = user.role;
+        token.sellerStatus = user.sellerStatus ?? null;
+        token.accessToken = user.accessToken;
         // Fixed login time
         token.loginTime = now;
         // Last activity time
         token.lastActive = now;
       }
 
+      if (trigger === "update" && updatePayload?.refreshUser && token.accessToken) {
+        try {
+          const response = await retryOnTransient(() =>
+            axios.get<AuthResponse>(`${apiBase}/auth/me`, {
+              headers: {
+                Authorization: `Bearer ${token.accessToken}`,
+              },
+            }),
+          );
+
+          const refreshedUser = response.data.user;
+
+          if (refreshedUser) {
+            token.id = refreshedUser.id;
+            token.role = refreshedUser.role;
+            token.sellerStatus = refreshedUser.sellerStatus ?? null;
+            token.accessToken = response.data.accessToken ?? token.accessToken;
+            token.lastActive = now;
+          }
+        } catch (err) {
+          console.error("[next-auth] Failed to refresh current user", err);
+        }
+      }
+
       // User activity update from frontend
-      if (trigger === "update" && session?.activity) {
+      if (trigger === "update" && updatePayload?.activity) {
         token.lastActive = now;
       }
 
@@ -136,12 +188,12 @@ export const authOptions: NextAuthOptions = {
 
     async session({ session, token }) {
       if (token?.id) {
-        (session.user as any).id = token.id;
-        (session.user as any).role = token.role;
-        (session.user as any).sellerStatus = token.sellerStatus ?? null;
-        (session as any).accessToken = token.accessToken;
-        (session as any).loginTime = token.loginTime;
-        (session as any).lastActive = token.lastActive;
+        session.user.id = token.id;
+        session.user.role = token.role ?? [];
+        session.user.sellerStatus = token.sellerStatus ?? null;
+        session.accessToken = token.accessToken;
+        session.loginTime = token.loginTime;
+        session.lastActive = token.lastActive;
       }
 
       return session;

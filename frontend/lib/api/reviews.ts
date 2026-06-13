@@ -8,8 +8,8 @@ export async function createReview(
   return delay({
     id: 'new-' + Date.now(),
     productId: _productId,
-    author: 'You',
-    role: 'Verified buyer',
+    authorName: 'You',
+    authorRole: 'Verified buyer',
     rating: _data.rating,
     body: _data.body,
     createdAt: new Date().toISOString().slice(0, 10),

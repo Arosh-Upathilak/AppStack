@@ -10,6 +10,7 @@ import GoogleSignInButton from "@/components/GoogleSignInButton";
 import { getRecaptchaToken } from "@/lib/recaptcha";
 import { useRouter } from "next/navigation";
 import axios from "axios";
+import { getErrorMessage } from "@/lib/api/errors";
 
 export default function LoginPage() {
   const [formData, setFormData] = useState<LoginProps>({
@@ -79,8 +80,8 @@ export default function LoginPage() {
               formData.email,
             )}&verifyToken=${verifyToken}`,
           );
-        } catch (err: any) {
-          toast.error(err?.response?.data?.error || "Failed to send OTP");
+        } catch (err) {
+          toast.error(getErrorMessage(err, "Failed to send OTP"));
         }
 
         return;
@@ -176,19 +177,6 @@ export default function LoginPage() {
             )}
           </button>
         </form>
-
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-            margin: "20px 0 14px",
-          }}
-        >
-          <div style={{ flex: 1, height: 1, background: "var(--line)" }} />
-          <span style={{ fontSize: 12, color: "var(--ink-4)" }}>or</span>
-          <div style={{ flex: 1, height: 1, background: "var(--line)" }} />
-        </div>
 
         <GoogleSignInButton callbackUrl="/" label="Log in with Google" />
 

@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
-import { signIn } from "next-auth/react";
+import { useEffect, useState } from "react";
+import { getProviders, signIn } from "next-auth/react";
 import { toast } from "react-toastify";
+import { getErrorMessage } from "@/lib/api/errors";
 
 interface Props {
   /** Where to land after a successful sign-in. NextAuth handles the actual nav. */
@@ -45,6 +46,27 @@ export default function GoogleSignInButton({
   label = "Continue with Google",
 }: Props) {
   const [busy, setBusy] = useState(false);
+  const [available, setAvailable] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+
+    getProviders()
+      .then((providers) => {
+        if (mounted) {
+          setAvailable(Boolean(providers?.google));
+        }
+      })
+      .catch(() => {
+        if (mounted) {
+          setAvailable(false);
+        }
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   async function handleClick() {
     try {
@@ -54,36 +76,53 @@ export default function GoogleSignInButton({
       // back authenticated — see useGoogleAuthToast.
       sessionStorage.setItem("pendingGoogleAuth", "1");
       await signIn("google", { callbackUrl });
-    } catch (err: any) {
+    } catch (err) {
       sessionStorage.removeItem("pendingGoogleAuth");
       setBusy(false);
-      toast.error(err?.message ?? "Could not start Google sign-in");
+      toast.error(getErrorMessage(err, "Could not start Google sign-in"));
     }
   }
 
+  if (!available) return null;
+
   return (
-    <button
-      type="button"
-      onClick={handleClick}
-      disabled={busy}
-      style={{
-        width: "100%",
-        height: 40,
-        borderRadius: 8,
-        border: "1.5px solid var(--line)",
-        background: "var(--surface)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: 10,
-        fontSize: 14,
-        fontWeight: 500,
-        cursor: busy ? "not-allowed" : "pointer",
-        opacity: busy ? 0.6 : 1,
-      }}
-    >
-      <GoogleLogo />
-      {busy ? "Redirecting…" : label}
-    </button>
+    <>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          margin: "20px 0 14px",
+        }}
+      >
+        <div style={{ flex: 1, height: 1, background: "var(--line)" }} />
+        <span style={{ fontSize: 12, color: "var(--ink-4)" }}>or</span>
+        <div style={{ flex: 1, height: 1, background: "var(--line)" }} />
+      </div>
+
+      <button
+        type="button"
+        onClick={handleClick}
+        disabled={busy}
+        style={{
+          width: "100%",
+          height: 40,
+          borderRadius: 8,
+          border: "1.5px solid var(--line)",
+          background: "var(--surface)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 10,
+          fontSize: 14,
+          fontWeight: 500,
+          cursor: busy ? "not-allowed" : "pointer",
+          opacity: busy ? 0.6 : 1,
+        }}
+      >
+        <GoogleLogo />
+        {busy ? "Redirecting…" : label}
+      </button>
+    </>
   );
 }

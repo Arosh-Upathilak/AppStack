@@ -9,7 +9,7 @@ export async function requireAdmin() {
     redirect("/login");
   }
 
-  if (!(session as any)?.user?.role.includes("ADMIN")) {
+  if (!session.user.role.includes("ADMIN")) {
     redirect("/");
   }
 

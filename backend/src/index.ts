@@ -11,6 +11,16 @@ import { connectRedis } from "./config/redis";
 import sellerRouter from "./routes/sellerRouters";
 import { initSocket } from "./socket/socketConnect";
 import notificationRouter from "./routes/notificationRouter";
+import productRouter from "./routes/productRouter";
+import paymentMethodRouter from "./routes/paymentMethodRouter";
+import subscriptionRouter from "./routes/subscriptionRouter";
+import invoiceRouter from "./routes/invoiceRouter";
+import consentRouter from "./routes/consentRouter";
+import adminRouter from "./routes/adminRouter";
+import integrationRouter from "./routes/integrationRouter";
+import webhookRouter from "./routes/webhookRouter";
+import refundRouter from "./routes/refundRouter";
+import { runBillingCycle } from "./services/scheduler";
 
 
 const server = express();
@@ -67,7 +77,7 @@ const corsOptions: cors.CorsOptions = {
       false
     );
   },
-  methods: ["GET", "POST", "PUT", "DELETE"],
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
   allowedHeaders: ["Content-Type", "Authorization", "x-user-id"],
   credentials: true,
 };
@@ -90,10 +100,22 @@ server.use("/api/auth/forgot-password", userResetEmailIpLimiter);
 // Routers
 // User routers
 server.use("/api/auth", userRoutes);
+// Public product catalog
+server.use("/api/products", productRouter);
 // Seller routers
 server.use("/api/seller", sellerRouter);
+// Buyer subscription foundation
+server.use("/api/subscriptions", subscriptionRouter);
+server.use("/api/invoices", invoiceRouter);
+server.use("/api/payment-methods", paymentMethodRouter);
+server.use("/api/consents", consentRouter);
+// Admin workflows
+server.use("/api/admin", adminRouter);
 // Notification
 server.use("/api/notification", notificationRouter);
+server.use("/api/integrations", integrationRouter);
+server.use("/api/webhooks", webhookRouter);
+server.use("/api/refunds", refundRouter);
 
 
 // Health Check
@@ -148,6 +170,16 @@ const startServer = async () => {
 
   // initialize socket
   initSocket(httpServer);
+
+  // Start billing scheduler on startup and repeat hourly
+  runBillingCycle().catch((err) => {
+    console.error("Failed to run initial billing cycle:", err);
+  });
+  setInterval(() => {
+    runBillingCycle().catch((err) => {
+      console.error("Failed to run scheduled billing cycle:", err);
+    });
+  }, 1000 * 60 * 60); // hourly
 
   httpServer.listen(port, () => {
     console.log(`🚀 Server running at http://localhost:${port}`);

@@ -49,9 +49,9 @@ export default function RoleSwitcher() {
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
 
-  const roles = ((session?.user as any)?.role ?? []) as AppRole[];
+  const roles = session?.user.role ?? [];
   const sellerStatus =
-    ((session?.user as any)?.sellerStatus as SellerStatus | null | undefined) ??
+    (session?.user.sellerStatus as SellerStatus | null | undefined) ??
     null;
 
   if (!roles || roles.length < 2) return null;

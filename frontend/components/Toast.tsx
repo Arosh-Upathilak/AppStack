@@ -9,7 +9,9 @@ export interface ToastItem {
   icon?: string;
 }
 
-export type ToastFn = (msg: string, icon?: string) => void;
+export interface ToastFn {
+  (msg: string, icon?: string): void;
+}
 
 interface ToastHostProps {
   toasts: ToastItem[];
