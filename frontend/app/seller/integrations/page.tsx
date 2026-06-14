@@ -7,6 +7,7 @@ import {
   listSellerProducts,
   retryWebhookEvent,
   sendTestWebhookEvent,
+  updateWebhookConfig,
   type WebhookEventFilters,
 } from "@/lib/api/products";
 import { getErrorMessage } from "@/lib/api/errors";
@@ -50,6 +51,7 @@ export default function SellerIntegrationsPage() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<WebhookEvent | null>(null);
+  const [webhookUrl, setWebhookUrl] = useState("");
 
   const selectedProduct = useMemo(
     () => products.find((product) => product.id === productId) ?? products[0],
@@ -97,6 +99,14 @@ export default function SellerIntegrationsPage() {
     return () => window.clearTimeout(timeout);
   }, [loadEvents]);
 
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      setWebhookUrl(selectedProduct?.webhookUrl ?? "");
+    }, 0);
+
+    return () => window.clearTimeout(timeout);
+  }, [selectedProduct?.id, selectedProduct?.webhookUrl]);
+
   async function copyText(value: string, label: string) {
     await navigator.clipboard.writeText(value);
     toast.success(`${label} copied`);
@@ -113,6 +123,21 @@ export default function SellerIntegrationsPage() {
       await loadEvents();
     } catch (err) {
       toast.error(getErrorMessage(err, "Failed to send test webhook"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleSaveConfig() {
+    if (!selectedProduct) return;
+    try {
+      setBusy(true);
+      await updateWebhookConfig(selectedProduct.id, webhookUrl);
+      toast.success("Webhook URL saved");
+      await loadProducts();
+      await loadEvents();
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Failed to save webhook URL"));
     } finally {
       setBusy(false);
     }
@@ -184,8 +209,17 @@ export default function SellerIntegrationsPage() {
           <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 14 }}>
             <div className="card" style={{ padding: 14 }}>
               <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>Webhook URL</div>
-              <div style={{ wordBreak: "break-all", color: "var(--ink-1)", fontSize: 13.5 }}>
-                {selectedProduct.webhookUrl || "No webhook URL configured"}
+              <div className="row gap-2">
+                <input
+                  className="input"
+                  type="url"
+                  value={webhookUrl}
+                  onChange={(event) => setWebhookUrl(event.target.value)}
+                  placeholder="https://your-app.com/webhooks/appstack"
+                />
+                <button className="btn btn-secondary btn-sm" disabled={busy || !webhookUrl.trim()} onClick={handleSaveConfig}>
+                  Save
+                </button>
               </div>
             </div>
             <div className="card" style={{ padding: 14 }}>

@@ -13,7 +13,11 @@ export type SubscriptionStatus =
   | "ACTIVE"
   | "CHANGE_PENDING"
   | "CANCEL_PENDING"
+  | "PAST_DUE"
   | "CANCELED";
+
+export type ProductChangeType = "UPDATE" | "DELETE";
+export type ProductChangeStatus = "PENDING" | "APPROVED" | "REJECTED";
 
 export type InvoiceStatus = "OPEN" | "PAID" | "VOID" | "REFUNDED";
 
@@ -56,6 +60,7 @@ export interface Product {
   fromCents: number;
   currency: string;
   plans: ProductPlan[];
+  pendingChangeRequest?: ProductChangeRequest;
 }
 
 export interface Review {
@@ -95,12 +100,38 @@ export interface Subscription {
   seats: number;
   status: SubscriptionStatus;
   canceledAt?: string | null;
+  pendingPlanId?: string | null;
   adminCancellationApprovedAt?: string | null;
+  billingRetryCount: number;
+  lastBillingFailureAt?: string | null;
+  nextBillingRetryAt?: string | null;
   integrationStatusMessage?: string | null;
   currentPeriodStart: string;
   currentPeriodEnd: string;
   nextBillingAt: string;
   paymentMethod: Pick<PaymentMethod, "id" | "brand" | "last4" | "isPrimary"> | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProductChangeRequest {
+  id: string;
+  productId: string;
+  sellerId: string;
+  type: ProductChangeType;
+  status: ProductChangeStatus;
+  payload?: Partial<Product> & { plans?: ProductPlan[] } | null;
+  rejectionReason?: string | null;
+  submittedAt: string;
+  reviewedAt?: string | null;
+  reviewedById?: string | null;
+  product?: Product;
+  seller?: {
+    id: string;
+    email: string;
+    firstName?: string | null;
+    lastName?: string | null;
+  };
   createdAt: string;
   updatedAt: string;
 }
@@ -135,6 +166,10 @@ export interface Consent {
 export interface WebhookEvent {
   id: string;
   productId: string;
+  product?: {
+    name: string;
+    slug: string;
+  };
   eventType: string;
   payload: string;
   status: "PENDING" | "DELIVERED" | "FAILED";

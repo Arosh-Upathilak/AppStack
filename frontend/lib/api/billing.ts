@@ -1,6 +1,7 @@
 import axios from "axios";
 import { userAuthorization } from "@/hook/userAuthorization";
 import type { Consent, Invoice, PaymentMethod, Subscription } from "./types";
+import type { ProductPlan } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL;
 
@@ -11,6 +12,8 @@ export interface CreateSubscriptionInput {
   recipientEmail: string;
   seats: number;
   acceptEmailConsent: boolean;
+  recipientVerifyToken?: string | null;
+  recipientOtp?: string;
 }
 
 export interface CreatePaymentMethodInput {
@@ -79,6 +82,24 @@ export async function createSubscription(input: CreateSubscriptionInput) {
   return res.data;
 }
 
+export async function requestRecipientVerification(recipientEmail: string) {
+  const headers = await userAuthorization();
+  const res = await axios.post<{
+    success: boolean;
+    message: string;
+    verifyToken: string | null;
+    required: boolean;
+  }>(
+    `${API_BASE}/subscriptions/recipient-verifications`,
+    { recipientEmail },
+    {
+      headers,
+      withCredentials: true,
+    },
+  );
+  return res.data;
+}
+
 export async function listSubscriptions() {
   const headers = await userAuthorization();
   const res = await axios.get<{ subscriptions: Subscription[] }>(
@@ -96,6 +117,31 @@ export async function cancelSubscription(subscriptionId: string) {
   const res = await axios.patch<{ subscription: Subscription }>(
     `${API_BASE}/subscriptions/${subscriptionId}`,
     { action: "cancel" },
+    {
+      headers,
+      withCredentials: true,
+    },
+  );
+  return res.data.subscription;
+}
+
+export async function listSubscriptionPlanOptions(subscriptionId: string) {
+  const headers = await userAuthorization();
+  const res = await axios.get<{ currentPlanId: string; plans: ProductPlan[] }>(
+    `${API_BASE}/subscriptions/${subscriptionId}/plan-options`,
+    {
+      headers,
+      withCredentials: true,
+    },
+  );
+  return res.data;
+}
+
+export async function changeSubscriptionPlan(subscriptionId: string, planId: string) {
+  const headers = await userAuthorization();
+  const res = await axios.patch<{ subscription: Subscription }>(
+    `${API_BASE}/subscriptions/${subscriptionId}`,
+    { action: "change-plan", planId },
     {
       headers,
       withCredentials: true,

@@ -4,12 +4,19 @@ import { AppError, asyncHandler } from "../utils/errorHandler";
 import prisma from "../utils/prisma";
 import { sendNotification } from "../socket/socketConnect";
 import { sendWebhookEvent } from "../services/webhookWorker";
+import { redisClient } from "../config/redis";
+import { transporter } from "../utils/nodeMailer";
+import { otpTemplate } from "../template/otpEmail";
+import { emailRegex } from "../utils/validation";
+import { formatMoney, sendTransactionEmail } from "../utils/emailNotifications";
 
 const includeSubscription = {
   product: true,
   plan: true,
   paymentMethod: true,
 };
+
+const RECIPIENT_OTP_EXPIRY = 300;
 
 function addBillingPeriod(start: Date, interval: "MONTHLY" | "YEARLY") {
   const end = new Date(start);
@@ -46,7 +53,11 @@ function serializeSubscription(subscription: any) {
     seats: subscription.seats,
     status: subscription.status,
     canceledAt: subscription.canceledAt,
+    pendingPlanId: subscription.pendingPlanId,
     adminCancellationApprovedAt: subscription.adminCancellationApprovedAt,
+    billingRetryCount: subscription.billingRetryCount,
+    lastBillingFailureAt: subscription.lastBillingFailureAt,
+    nextBillingRetryAt: subscription.nextBillingRetryAt,
     integrationStatusMessage: subscription.integrationStatusMessage,
     currentPeriodStart: subscription.currentPeriodStart,
     currentPeriodEnd: subscription.currentPeriodEnd,
@@ -62,6 +73,41 @@ function serializeSubscription(subscription: any) {
     createdAt: subscription.createdAt,
     updatedAt: subscription.updatedAt,
   };
+}
+
+async function verifyRecipientOtp(args: {
+  buyerId: string;
+  recipientEmail: string;
+  recipientVerifyToken?: string;
+  recipientOtp?: string;
+}) {
+  if (!args.recipientVerifyToken || !args.recipientOtp) {
+    throw new AppError("Recipient email verification is required", 400);
+  }
+
+  const key = `recipient:${args.recipientVerifyToken}`;
+  const payload = await redisClient.get(key);
+  if (!payload) {
+    throw new AppError("Recipient email verification expired", 400);
+  }
+
+  let parsed: { buyerId: string; email: string; otp: string };
+  try {
+    parsed = JSON.parse(payload);
+  } catch {
+    await redisClient.del(key);
+    throw new AppError("Recipient email verification expired", 400);
+  }
+
+  if (
+    parsed.buyerId !== args.buyerId ||
+    parsed.email.toLowerCase() !== args.recipientEmail.toLowerCase() ||
+    parsed.otp !== args.recipientOtp
+  ) {
+    throw new AppError("Invalid recipient email verification code", 400);
+  }
+
+  await redisClient.del(key);
 }
 
 async function settleSubscriptionPayment(client: any, args: {
@@ -153,6 +199,8 @@ export const createSubscription = asyncHandler(
       recipientEmail,
       seats,
       acceptEmailConsent,
+      recipientVerifyToken,
+      recipientOtp,
     } = req.body as {
       productId?: string;
       planId?: string;
@@ -160,13 +208,15 @@ export const createSubscription = asyncHandler(
       recipientEmail?: string;
       seats?: number;
       acceptEmailConsent?: boolean;
+      recipientVerifyToken?: string;
+      recipientOtp?: string;
     };
 
     if (!productId || !planId) {
       throw new AppError("productId and planId are required", 400);
     }
 
-    if (!recipientEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipientEmail)) {
+    if (!recipientEmail || !emailRegex.test(recipientEmail)) {
       throw new AppError("A valid recipientEmail is required", 400);
     }
 
@@ -175,6 +225,25 @@ export const createSubscription = asyncHandler(
     }
 
     const seatCount = Math.max(1, Number(seats) || 1);
+    const normalizedRecipientEmail = recipientEmail.toLowerCase();
+
+    const buyer = await prisma.user.findUnique({
+      where: { id: buyerId },
+      select: { email: true, firstName: true, lastName: true },
+    });
+
+    if (!buyer) {
+      throw new AppError("Buyer not found", 404);
+    }
+
+    if (normalizedRecipientEmail !== buyer.email.toLowerCase()) {
+      await verifyRecipientOtp({
+        buyerId,
+        recipientEmail: normalizedRecipientEmail,
+        recipientVerifyToken,
+        recipientOtp,
+      });
+    }
 
     const product = await prisma.product.findFirst({
       where: {
@@ -224,7 +293,7 @@ export const createSubscription = asyncHandler(
           productId: product.id,
           planId: plan.id,
           paymentMethodId: method.id,
-          recipientEmail: recipientEmail.toLowerCase(),
+          recipientEmail: normalizedRecipientEmail,
           seats: seatCount,
           status: requiresSaasActivation ? "PENDING" : "ACTIVE",
           integrationStatusMessage: requiresSaasActivation
@@ -244,7 +313,7 @@ export const createSubscription = asyncHandler(
           productId: product.id,
           planId: plan.id,
           type: "SHARE_EMAIL",
-          recipientEmail: recipientEmail.toLowerCase(),
+          recipientEmail: normalizedRecipientEmail,
           ipAddress: req.ip,
           userAgent: req.get("user-agent") ?? null,
         },
@@ -276,6 +345,22 @@ export const createSubscription = asyncHandler(
       },
     });
     sendNotification(buyerId, buyerNotification);
+    await sendTransactionEmail({
+      to: buyer.email,
+      subject: requiresSaasActivation
+        ? "Your AppStack subscription is pending activation"
+        : "Your AppStack subscription is active",
+      title: requiresSaasActivation ? "Subscription pending activation" : "Subscription active",
+      message: requiresSaasActivation
+        ? `${product.name} has received your subscription request and is waiting for SaaS activation acknowledgement.`
+        : `Your ${product.name} subscription is active.`,
+      details: {
+        Product: product.name,
+        Plan: plan.name,
+        Recipient: normalizedRecipientEmail,
+        Amount: formatMoney(plan.priceCents * seatCount, plan.currency),
+      },
+    });
 
     const sellerNotification = await prisma.notification.create({
       data: {
@@ -289,6 +374,22 @@ export const createSubscription = asyncHandler(
       },
     });
     sendNotification(product.sellerId, sellerNotification);
+    const seller = await prisma.user.findUnique({
+      where: { id: product.sellerId },
+      select: { email: true },
+    });
+    await sendTransactionEmail({
+      to: seller?.email,
+      subject: `New AppStack subscription for ${product.name}`,
+      title: requiresSaasActivation ? "New subscription pending activation" : "New subscription active",
+      message: `${product.name} received a new subscription in AppStack.`,
+      details: {
+        Product: product.name,
+        Plan: plan.name,
+        Recipient: normalizedRecipientEmail,
+        Amount: formatMoney(plan.priceCents * seatCount, plan.currency),
+      },
+    });
 
     // Fire subscription.created webhook event
     await sendWebhookEvent(product.id, "subscription.created", {
@@ -312,6 +413,63 @@ export const createSubscription = asyncHandler(
   },
 );
 
+export const requestRecipientVerification = asyncHandler(
+  async (req: Request, res: Response) => {
+    const buyerId = (req as any).user.id;
+    const { recipientEmail } = req.body as { recipientEmail?: string };
+
+    if (!recipientEmail || !emailRegex.test(recipientEmail)) {
+      throw new AppError("A valid recipientEmail is required", 400);
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: buyerId },
+      select: { email: true },
+    });
+
+    if (!user) {
+      throw new AppError("Buyer not found", 404);
+    }
+
+    const normalizedRecipientEmail = recipientEmail.toLowerCase();
+    if (normalizedRecipientEmail === user.email.toLowerCase()) {
+      return res.status(200).json({
+        success: true,
+        message: "Recipient email matches account email; no OTP required.",
+        verifyToken: null,
+        required: false,
+      });
+    }
+
+    const verifyToken = crypto.randomUUID();
+    const otp = crypto.randomInt(100000, 999999).toString();
+    await redisClient.setEx(
+      `recipient:${verifyToken}`,
+      RECIPIENT_OTP_EXPIRY,
+      JSON.stringify({ buyerId, email: normalizedRecipientEmail, otp }),
+    );
+
+    try {
+      await transporter.sendMail({
+        from: process.env.EMAIL_USER,
+        to: normalizedRecipientEmail,
+        subject: "Verify your AppStack subscription recipient email",
+        html: otpTemplate(otp),
+      });
+    } catch {
+      await redisClient.del(`recipient:${verifyToken}`);
+      throw new AppError("Failed to send recipient verification email", 500);
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Recipient verification code sent",
+      verifyToken,
+      required: true,
+    });
+  },
+);
+
 export const listSubscriptions = asyncHandler(
   async (req: Request, res: Response) => {
     const buyerId = (req as any).user.id;
@@ -328,6 +486,40 @@ export const listSubscriptions = asyncHandler(
     return res.status(200).json({
       success: true,
       subscriptions: subscriptions.map(serializeSubscription),
+    });
+  },
+);
+
+export const getSubscriptionPlanOptions = asyncHandler(
+  async (req: Request, res: Response) => {
+    const buyerId = (req as any).user.id;
+    const subscriptionId = String(req.params.subscriptionId);
+
+    const subscription = await prisma.subscription.findFirst({
+      where: {
+        id: subscriptionId,
+        buyerId,
+      },
+      include: {
+        product: {
+          include: {
+            plans: {
+              where: { isActive: true },
+              orderBy: { priceCents: "asc" },
+            },
+          },
+        },
+      },
+    });
+
+    if (!subscription) {
+      throw new AppError("Subscription not found", 404);
+    }
+
+    return res.status(200).json({
+      success: true,
+      currentPlanId: subscription.planId,
+      plans: subscription.product.plans,
     });
   },
 );
@@ -535,6 +727,7 @@ export const decideCancellation = asyncHandler(
       include: {
         product: true,
         plan: true,
+        buyer: true,
       },
     });
 
@@ -619,6 +812,16 @@ export const decideCancellation = asyncHandler(
         },
       });
       sendNotification(subscription.buyerId, buyerNotif);
+      await sendTransactionEmail({
+        to: subscription.buyer.email,
+        subject: "Your AppStack subscription was canceled",
+        title: "Subscription canceled",
+        message: `Your subscription for ${subscription.product.name} has been canceled.`,
+        details: {
+          Product: subscription.product.name,
+          Plan: subscription.plan.name,
+        },
+      });
 
       // Notify seller
       const sellerNotif = await prisma.notification.create({

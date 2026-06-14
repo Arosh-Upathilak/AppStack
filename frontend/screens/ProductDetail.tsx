@@ -11,6 +11,7 @@ import { getProduct, listReviews, checkReviewEligibility, submitProductReview } 
 import {
   createSubscription,
   listPaymentMethods,
+  requestRecipientVerification,
 } from '@/lib/api/billing';
 import { getErrorMessage } from '@/lib/api/errors';
 import type { PaymentMethod, Product, ProductPlan, Review } from '@/lib/api/types';
@@ -109,14 +110,52 @@ function CheckoutModal({
   defaultEmail: string;
   submitting: boolean;
   onClose: () => void;
-  onConfirm: (input: { paymentMethodId: string; recipientEmail: string; seats: number; acceptEmailConsent: boolean }) => void;
+  onConfirm: (input: {
+    paymentMethodId: string;
+    recipientEmail: string;
+    seats: number;
+    acceptEmailConsent: boolean;
+    recipientVerifyToken?: string | null;
+    recipientOtp?: string;
+  }) => void;
 }) {
   const primary = methods.find(method => method.isPrimary) ?? methods[0];
   const [paymentMethodId, setPaymentMethodId] = React.useState(primary?.id ?? '');
   const [recipientEmail, setRecipientEmail] = React.useState(defaultEmail);
   const [seats, setSeats] = React.useState(1);
   const [acceptEmailConsent, setAcceptEmailConsent] = React.useState(false);
+  const [recipientVerifyToken, setRecipientVerifyToken] = React.useState<string | null>(null);
+  const [recipientOtp, setRecipientOtp] = React.useState('');
+  const [otpRequired, setOtpRequired] = React.useState(false);
+  const [sendingOtp, setSendingOtp] = React.useState(false);
+  const [otpMessage, setOtpMessage] = React.useState<string | null>(null);
   const total = plan.priceCents * Math.max(1, seats);
+  const normalizedDefaultEmail = defaultEmail.trim().toLowerCase();
+  const normalizedRecipientEmail = recipientEmail.trim().toLowerCase();
+  const recipientDiffers = !!normalizedRecipientEmail && normalizedRecipientEmail !== normalizedDefaultEmail;
+
+  function handleRecipientEmailChange(value: string) {
+    setRecipientEmail(value);
+    setRecipientVerifyToken(null);
+    setRecipientOtp('');
+    setOtpRequired(false);
+    setOtpMessage(null);
+  }
+
+  async function sendRecipientOtp() {
+    setSendingOtp(true);
+    setOtpMessage(null);
+    try {
+      const result = await requestRecipientVerification(recipientEmail);
+      setRecipientVerifyToken(result.verifyToken);
+      setOtpRequired(result.required);
+      setOtpMessage(result.message);
+    } catch (err) {
+      setOtpMessage(getErrorMessage(err, 'Failed to send verification code'));
+    } finally {
+      setSendingOtp(false);
+    }
+  }
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -140,7 +179,27 @@ function CheckoutModal({
           <div style={{ display: 'grid', gap: 12, marginBottom: 16 }}>
             <div>
               <label className="field-label">Recipient email shared with seller</label>
-              <input className="input" type="email" value={recipientEmail} onChange={e => setRecipientEmail(e.target.value)} />
+              <input className="input" type="email" value={recipientEmail} onChange={e => handleRecipientEmailChange(e.target.value)} />
+              {recipientDiffers && (
+                <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
+                  <div className="row gap-2" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span className="muted" style={{ fontSize: 12 }}>Different recipient emails must be verified.</span>
+                    <button type="button" className="btn btn-secondary btn-sm" disabled={sendingOtp || !recipientEmail} onClick={sendRecipientOtp}>
+                      {sendingOtp ? 'Sending...' : 'Send code'}
+                    </button>
+                  </div>
+                  {otpMessage && <div className="muted" style={{ fontSize: 12 }}>{otpMessage}</div>}
+                  {otpRequired && (
+                    <input
+                      className="input"
+                      inputMode="numeric"
+                      placeholder="6-digit verification code"
+                      value={recipientOtp}
+                      onChange={e => setRecipientOtp(e.target.value)}
+                    />
+                  )}
+                </div>
+              )}
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
               <div>
@@ -185,8 +244,20 @@ function CheckoutModal({
           <button className="btn btn-secondary" onClick={onClose} disabled={submitting}>Cancel</button>
           <button
             className="btn btn-primary"
-            disabled={submitting || methods.length === 0 || !acceptEmailConsent}
-            onClick={() => onConfirm({ paymentMethodId, recipientEmail, seats, acceptEmailConsent })}
+            disabled={
+              submitting ||
+              methods.length === 0 ||
+              !acceptEmailConsent ||
+              (recipientDiffers && (!recipientVerifyToken || !recipientOtp.trim()))
+            }
+            onClick={() => onConfirm({
+              paymentMethodId,
+              recipientEmail,
+              seats,
+              acceptEmailConsent,
+              recipientVerifyToken,
+              recipientOtp,
+            })}
           >
             {submitting ? 'Processing...' : <>Confirm subscription <Icon name="arrow_right" size={13} /></>}
           </button>
@@ -210,6 +281,7 @@ export default function ProductDetail({ productId, mode = 'buyer' }: ProductDeta
   const [showCheckout, setShowCheckout] = React.useState(false);
   const [submitting, setSubmitting] = React.useState(false);
   const [eligible, setEligible] = React.useState(false);
+  const [existingReview, setExistingReview] = React.useState<Review | null>(null);
   const [submittingReview, setSubmittingReview] = React.useState(false);
   const [rating, setRating] = React.useState(5);
   const [reviewBody, setReviewBody] = React.useState("");
@@ -222,9 +294,9 @@ export default function ProductDetail({ productId, mode = 'buyer' }: ProductDeta
         getProduct(productId),
         listReviews(productId),
         mode === 'buyer' ? listPaymentMethods().catch(() => ({ methods: [] })) : Promise.resolve({ methods: [] }),
-        mode === 'buyer' ? checkReviewEligibility(productId).catch(() => false) : Promise.resolve(false),
+        mode === 'buyer' ? checkReviewEligibility(productId).catch(() => ({ eligible: false, existingReview: null })) : Promise.resolve({ eligible: false, existingReview: null }),
       ])
-        .then(([loadedProduct, loadedReviews, paymentResponse, eligibleToReview]) => {
+        .then(([loadedProduct, loadedReviews, paymentResponse, reviewEligibility]) => {
           if (cancelled) return;
           if (!loadedProduct) {
             setError('Product not found.');
@@ -233,7 +305,8 @@ export default function ProductDetail({ productId, mode = 'buyer' }: ProductDeta
           setProduct(loadedProduct);
           setReviews(loadedReviews);
           setMethods(paymentResponse.methods);
-          setEligible(eligibleToReview);
+          setEligible(reviewEligibility.eligible);
+          setExistingReview(reviewEligibility.existingReview ?? null);
           setSelectedPlanId(loadedProduct.plans.find(plan => plan.isActive)?.id ?? loadedProduct.plans[0]?.id ?? '');
         })
         .catch(err => {
@@ -278,6 +351,8 @@ export default function ProductDetail({ productId, mode = 'buyer' }: ProductDeta
     recipientEmail: string;
     seats: number;
     acceptEmailConsent: boolean;
+    recipientVerifyToken?: string | null;
+    recipientOtp?: string;
   }) => {
     if (!selectedPlan) return;
     setSubmitting(true);
@@ -289,6 +364,8 @@ export default function ProductDetail({ productId, mode = 'buyer' }: ProductDeta
         recipientEmail: input.recipientEmail,
         seats: input.seats,
         acceptEmailConsent: input.acceptEmailConsent,
+        recipientVerifyToken: input.recipientVerifyToken,
+        recipientOtp: input.recipientOtp,
       });
       toast(
         result.subscription.status === "PENDING"
@@ -318,6 +395,7 @@ export default function ProductDetail({ productId, mode = 'buyer' }: ProductDeta
       const loadedReviews = await listReviews(productId);
       setReviews(loadedReviews);
       setEligible(false); // Can review only once or hide form after submit
+      setExistingReview(loadedReviews[0] ?? null);
       // Let's also reload the product to update the rating and reviewsCount
       const loadedProduct = await getProduct(productId);
       if (loadedProduct) {
@@ -425,6 +503,14 @@ export default function ProductDetail({ productId, mode = 'buyer' }: ProductDeta
                     </button>
                   </div>
                 </form>
+              </div>
+            )}
+            {!eligible && existingReview && (
+              <div style={{ borderTop: '1px solid var(--line)', marginTop: 20, paddingTop: 16 }}>
+                <div className="row gap-2" style={{ fontSize: 13, color: 'var(--ink-3)' }}>
+                  <Icon name="check_circle" size={14} style={{ color: 'var(--success)' }} />
+                  You reviewed this product on {new Date(existingReview.createdAt).toLocaleDateString()}.
+                </div>
               </div>
             )}
           </div>

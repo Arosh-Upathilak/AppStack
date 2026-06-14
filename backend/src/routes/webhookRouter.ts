@@ -3,6 +3,7 @@ import {
   listSellerWebhookEvents,
   retryWebhookEvent,
   sendTestWebhookEvent,
+  updateSellerWebhookConfig,
 } from "../controllers/webhookController";
 import { authMiddleware, authMiddlewareRequireRole } from "../middleware/authMiddleware";
 
@@ -20,6 +21,13 @@ webhookRouter.post(
   authMiddleware,
   authMiddlewareRequireRole("SELLER"),
   sendTestWebhookEvent
+);
+
+webhookRouter.put(
+  "/products/:productId/config",
+  authMiddleware,
+  authMiddlewareRequireRole("SELLER"),
+  updateSellerWebhookConfig
 );
 
 webhookRouter.post(

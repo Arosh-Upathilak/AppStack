@@ -1,7 +1,29 @@
 import { Request, Response } from "express";
 import { asyncHandler, AppError } from "../utils/errorHandler";
 import prisma from "../utils/prisma";
-import { deliverWebhookEvent, sendWebhookEvent } from "../services/webhookWorker";
+import {
+  deliverWebhookEvent,
+  ensureWebhookSecret,
+  sendWebhookEvent,
+} from "../services/webhookWorker";
+
+function isLocalhostWebhookUrl(value: string) {
+  try {
+    const parsed = new URL(value);
+    return parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1";
+  } catch {
+    return false;
+  }
+}
+
+function isValidWebhookUrl(value: string) {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "https:" || parsed.protocol === "http:";
+  } catch {
+    return false;
+  }
+}
 
 export const listSellerWebhookEvents = asyncHandler(
   async (req: Request, res: Response) => {
@@ -93,6 +115,69 @@ export const sendTestWebhookEvent = asyncHandler(
           ? "Webhook test delivered successfully"
           : "Webhook test created but delivery did not succeed",
       event,
+    });
+  },
+);
+
+export const updateSellerWebhookConfig = asyncHandler(
+  async (req: Request, res: Response) => {
+    const userId = (req as any).user.id;
+    const productId = String(req.params.productId);
+    const { webhookUrl } = req.body as { webhookUrl?: string };
+    const nextWebhookUrl = webhookUrl?.trim() || null;
+
+    const product = await prisma.product.findFirst({
+      where: {
+        id: productId,
+        sellerId: userId,
+      },
+    });
+
+    if (!product) {
+      throw new AppError("Product not found or unauthorized", 404);
+    }
+
+    if (!nextWebhookUrl) {
+      throw new AppError("webhookUrl is required", 400);
+    }
+
+    if (!isValidWebhookUrl(nextWebhookUrl)) {
+      throw new AppError("webhookUrl must be a valid HTTP or HTTPS URL", 400);
+    }
+
+    if (
+      process.env.NODE_ENV !== "development" &&
+      isLocalhostWebhookUrl(nextWebhookUrl)
+    ) {
+      throw new AppError("Localhost webhook URLs are allowed only in development", 400);
+    }
+
+    const secret = await ensureWebhookSecret(product.id);
+    const updated = await prisma.product.update({
+      where: { id: product.id },
+      data: {
+        webhookUrl: nextWebhookUrl,
+        webhookTested:
+          product.webhookUrl === nextWebhookUrl ? product.webhookTested : false,
+      },
+      select: {
+        id: true,
+        webhookUrl: true,
+        webhookTested: true,
+        webhookSecret: true,
+      },
+    });
+
+    return res.status(200).json({
+      success: true,
+      message:
+        product.webhookUrl === nextWebhookUrl
+          ? "Webhook configuration unchanged"
+          : "Webhook URL saved. Send a successful test before submitting the product.",
+      product: {
+        ...updated,
+        webhookSecret: updated.webhookSecret ?? secret,
+      },
     });
   },
 );

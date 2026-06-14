@@ -588,6 +588,83 @@ const updateUserRole = asyncHandler(async (req: Request, res: Response) => {
   });
 });
 
+const updateUserProfile = asyncHandler(async (req: Request, res: Response) => {
+  const userId = String(req.params.userId);
+  const { firstName, lastName, isVerified } = req.body as {
+    firstName?: string;
+    lastName?: string;
+    isVerified?: boolean;
+  };
+
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) {
+    throw new AppError("User not found", 404);
+  }
+
+  if (user.email.includes("anonymized.local")) {
+    throw new AppError("Anonymized users cannot be edited", 400);
+  }
+
+  const updatedUser = await prisma.user.update({
+    where: { id: userId },
+    data: {
+      ...(firstName !== undefined ? { firstName: firstName.trim() || null } : {}),
+      ...(lastName !== undefined ? { lastName: lastName.trim() || null } : {}),
+      ...(isVerified !== undefined ? { isVerified: Boolean(isVerified) } : {}),
+    },
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      email: true,
+      roles: true,
+      isVerified: true,
+      createdAt: true,
+    },
+  });
+
+  return res.status(200).json({
+    success: true,
+    message: "User profile updated successfully",
+    user: updatedUser,
+  });
+});
+
+const sendAdminPasswordReset = asyncHandler(async (req: Request, res: Response) => {
+  const userId = String(req.params.userId);
+
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) {
+    throw new AppError("User not found", 404);
+  }
+
+  if (!user.email || user.email.includes("anonymized.local")) {
+    throw new AppError("Cannot send a reset email for this user", 400);
+  }
+
+  const resetToken = crypto.randomUUID();
+  await redisClient.setEx(`reset:${resetToken}`, OTP_EXPIRY, user.email);
+  const frontendUrl = process.env.FRONTEND_URL || "http://localhost:3000";
+  const resetLink = `${frontendUrl}/reset-password/${resetToken}`;
+
+  try {
+    await transporter.sendMail({
+      from: process.env.EMAIL_USER,
+      to: user.email,
+      subject: "Reset Your AppStack Password",
+      html: resetPasswordTemplate(resetLink),
+    });
+  } catch {
+    await redisClient.del(`reset:${resetToken}`);
+    throw new AppError("Failed to send reset email", 500);
+  }
+
+  return res.status(200).json({
+    success: true,
+    message: "Password reset email sent successfully",
+  });
+});
+
 const deleteUserGDPR = asyncHandler(async (req: Request, res: Response) => {
   const userId = String(req.params.userId);
 
@@ -647,6 +724,8 @@ export {
   resetPassword,
   googleLogin,
   listUsers,
+  updateUserProfile,
+  sendAdminPasswordReset,
   updateUserRole,
   deleteUserGDPR,
 };

@@ -1,15 +1,17 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { toast } from "react-toastify";
 import Icon from "@/components/Icon";
 import { submitSellerApplication } from "@/lib/api/sellers";
 import { getErrorMessage } from "@/lib/api/errors";
+import PendingApprovalGate from "@/components/seller/PendingApprovalGate";
 
 export default function BecomeSellerPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { data: session, status } = useSession();
 
   const [businessName, setBusinessName] = useState("");
@@ -20,13 +22,16 @@ export default function BecomeSellerPage() {
   const [gdprAccepted, setGdprAccepted] = useState(false);
   const payoutEmail = session?.user.email ?? "";
 
+  const isReapplying = searchParams.get("reapply") === "true";
+  const sellerStatus = session?.user.sellerStatus ?? null;
+
   useEffect(() => {
     if (status !== "authenticated") return;
     const roles = session?.user.role ?? [];
-    if (roles.includes("SELLER")) {
+    if (roles.includes("SELLER") && sellerStatus === "APPROVED") {
       router.replace("/seller");
     }
-  }, [status, session, router]);
+  }, [status, session, sellerStatus, router]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -70,6 +75,14 @@ export default function BecomeSellerPage() {
   const inputCls = "input";
   const labelCls = "text-[13px] font-medium text-ink-2";
   const hintCls = "mt-1 mb-1.5 text-xs text-ink-4";
+
+  if (sellerStatus === "PENDING" && !submitted) {
+    return <PendingApprovalGate status="PENDING" />;
+  }
+
+  if (sellerStatus === "REJECTED" && !isReapplying && !submitted) {
+    return <PendingApprovalGate status="REJECTED" />;
+  }
 
   if (submitted) {
     return (

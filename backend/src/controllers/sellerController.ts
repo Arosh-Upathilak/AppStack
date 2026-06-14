@@ -14,38 +14,93 @@ const createSellerRequest = asyncHandler(
       throw new AppError("payoutEmail and businessName are required", 400);
     }
 
+    const normalizedEmail = payoutEmail.trim().toLowerCase();
+
+    // Check if the user already has a seller record
     const existsSeller = await prisma.seller.findFirst({
-      where: {
-        payoutEmail: payoutEmail,
-      },
+      where: { userId },
     });
+
+    let newSeller;
 
     if (existsSeller) {
-      throw new AppError("Account already seller", 400);
+      if (existsSeller.isApproveSeller === "APPROVED") {
+        throw new AppError("You are already an approved seller", 400);
+      }
+      if (existsSeller.isApproveSeller === "PENDING") {
+        throw new AppError("Your seller application is already pending review", 400);
+      }
+
+      // If existsSeller.isApproveSeller === "DENIED" (rejected), we can update and resubmit it
+      const emailTaken = await prisma.seller.findFirst({
+        where: {
+          payoutEmail: normalizedEmail,
+          NOT: { userId },
+        },
+      });
+
+      if (emailTaken) {
+        throw new AppError("Payout email is already in use by another account", 400);
+      }
+
+      newSeller = await prisma.$transaction(async (tx) => {
+        const seller = await tx.seller.update({
+          where: { id: existsSeller.id },
+          data: {
+            payoutEmail: normalizedEmail,
+            businessName,
+            aboutProject,
+            isApproveSeller: "PENDING",
+          },
+        });
+
+        await tx.consent.create({
+          data: {
+            userId,
+            type: "DATA_PROTECTION",
+            recipientEmail: normalizedEmail,
+            ipAddress: req.ip,
+            userAgent: req.get("user-agent") ?? null,
+          },
+        });
+
+        return seller;
+      });
+    } else {
+      // No seller record exists yet
+      const emailTaken = await prisma.seller.findFirst({
+        where: {
+          payoutEmail: normalizedEmail,
+        },
+      });
+
+      if (emailTaken) {
+        throw new AppError("Payout email is already in use by another account", 400);
+      }
+
+      newSeller = await prisma.$transaction(async (tx) => {
+        const seller = await tx.seller.create({
+          data: {
+            userId,
+            payoutEmail: normalizedEmail,
+            businessName,
+            aboutProject,
+          },
+        });
+
+        await tx.consent.create({
+          data: {
+            userId,
+            type: "DATA_PROTECTION",
+            recipientEmail: normalizedEmail,
+            ipAddress: req.ip,
+            userAgent: req.get("user-agent") ?? null,
+          },
+        });
+
+        return seller;
+      });
     }
-
-    const newSeller = await prisma.$transaction(async (tx) => {
-      const seller = await tx.seller.create({
-        data: {
-          userId,
-          payoutEmail,
-          businessName,
-          aboutProject,
-        },
-      });
-
-      await tx.consent.create({
-        data: {
-          userId,
-          type: "DATA_PROTECTION",
-          recipientEmail: payoutEmail.trim().toLowerCase(),
-          ipAddress: req.ip,
-          userAgent: req.get("user-agent") ?? null,
-        },
-      });
-
-      return seller;
-    });
 
     const notification = await prisma.notification.create({
       data: {

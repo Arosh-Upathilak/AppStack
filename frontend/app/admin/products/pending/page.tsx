@@ -7,8 +7,12 @@ import {
   decideProduct,
   listPendingProducts,
 } from "@/lib/api/products";
+import {
+  decideProductChangeRequest,
+  getPendingProductChangeRequests,
+} from "@/lib/api/admin";
 import { getErrorMessage } from "@/lib/api/errors";
-import type { Product } from "@/lib/api/types";
+import type { Product, ProductChangeRequest } from "@/lib/api/types";
 
 function money(cents: number, currency: string) {
   return new Intl.NumberFormat(undefined, {
@@ -19,13 +23,18 @@ function money(cents: number, currency: string) {
 
 export default function AdminPendingProductsPage() {
   const [products, setProducts] = useState<Product[]>([]);
+  const [changeRequests, setChangeRequests] = useState<ProductChangeRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   async function reload() {
     try {
-      const items = await listPendingProducts();
+      const [items, changes] = await Promise.all([
+        listPendingProducts(),
+        getPendingProductChangeRequests(),
+      ]);
       setProducts(items);
+      setChangeRequests(changes);
     } catch (err) {
       toast.error(getErrorMessage(err, "Failed to load pending products"));
     } finally {
@@ -59,6 +68,24 @@ export default function AdminPendingProductsPage() {
     }
   }
 
+  async function handleChangeDecision(changeRequestId: string, decision: "APPROVE" | "REJECT") {
+    const rejectionReason =
+      decision === "REJECT"
+        ? prompt("Reason for rejection?", "Change request did not meet marketplace requirements.") ?? undefined
+        : undefined;
+
+    try {
+      setBusyId(changeRequestId);
+      await decideProductChangeRequest(changeRequestId, decision, rejectionReason);
+      setChangeRequests(prev => prev.filter(request => request.id !== changeRequestId));
+      toast.success(`Change request ${decision.toLowerCase()}d`);
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Failed to decide product change"));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   return (
     <div className="page screen-enter">
       <div className="page-head">
@@ -70,14 +97,19 @@ export default function AdminPendingProductsPage() {
 
       {loading ? (
         <div className="card card-pad">Loading pending products...</div>
-      ) : products.length === 0 ? (
+      ) : products.length === 0 && changeRequests.length === 0 ? (
         <div className="card" style={{ padding: 48, textAlign: "center" }}>
           <div className="mb-2 text-3xl opacity-60">✓</div>
           <div className="muted" style={{ fontSize: 13.5 }}>No pending product submissions.</div>
         </div>
       ) : (
-        <div className="card" style={{ overflow: "hidden" }}>
-          <table className="tbl">
+        <div style={{ display: "grid", gap: 18 }}>
+        {products.length > 0 && (
+          <div className="card" style={{ overflow: "hidden" }}>
+            <div style={{ padding: 18, borderBottom: "1px solid var(--line-soft)" }}>
+              <h2 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>New product submissions</h2>
+            </div>
+            <table className="tbl">
             <thead>
               <tr>
                 <th style={{ paddingLeft: 20 }}>Product</th>
@@ -128,7 +160,55 @@ export default function AdminPendingProductsPage() {
                 );
               })}
             </tbody>
-          </table>
+            </table>
+          </div>
+        )}
+        {changeRequests.length > 0 && (
+          <div className="card" style={{ overflow: "hidden" }}>
+            <div style={{ padding: 18, borderBottom: "1px solid var(--line-soft)" }}>
+              <h2 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>Product change requests</h2>
+            </div>
+            <table className="tbl">
+              <thead>
+                <tr>
+                  <th style={{ paddingLeft: 20 }}>Product</th>
+                  <th>Seller</th>
+                  <th>Type</th>
+                  <th>Requested</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {changeRequests.map(request => {
+                  const busy = busyId === request.id;
+                  return (
+                    <tr key={request.id}>
+                      <td style={{ paddingLeft: 20 }}>
+                        <div style={{ fontWeight: 600, color: "var(--ink-1)" }}>{request.product?.name ?? request.productId}</div>
+                        <div className="muted" style={{ fontSize: 12 }}>
+                          {request.type === "UPDATE" ? request.payload?.shortDescription ?? "Product edit" : "Unlist and cancel active subscriptions"}
+                        </div>
+                      </td>
+                      <td>{request.seller?.email ?? request.sellerId}</td>
+                      <td>{request.type}</td>
+                      <td>{new Date(request.submittedAt).toLocaleDateString()}</td>
+                      <td className="col-action">
+                        <div className="row gap-2" style={{ justifyContent: "flex-end" }}>
+                          <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => handleChangeDecision(request.id, "REJECT")}>
+                            Reject
+                          </button>
+                          <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => handleChangeDecision(request.id, "APPROVE")}>
+                            Approve
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
         </div>
       )}
     </div>

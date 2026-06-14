@@ -1,6 +1,8 @@
 import express from "express";
 import {
+  decideProductChangeRequest,
   decideProduct,
+  listPendingProductChangeRequests,
   listPendingProducts,
 } from "../controllers/productController";
 import {
@@ -16,10 +18,15 @@ import {
   decidePayout,
 } from "../controllers/sellerController";
 import {
+  sendAdminPasswordReset,
+  updateUserProfile,
   listUsers,
   updateUserRole,
   deleteUserGDPR,
 } from "../controllers/userControllers";
+import {
+  listAdminWebhookEvents,
+} from "../controllers/webhookController";
 import {
   runBillingCycle,
 } from "../services/scheduler";
@@ -41,6 +48,18 @@ adminRouter.post(
   authMiddleware,
   authMiddlewareRequireRole("ADMIN"),
   decideProduct,
+);
+adminRouter.get(
+  "/products/changes/pending",
+  authMiddleware,
+  authMiddlewareRequireRole("ADMIN"),
+  listPendingProductChangeRequests,
+);
+adminRouter.post(
+  "/products/changes/:changeRequestId/decision",
+  authMiddleware,
+  authMiddlewareRequireRole("ADMIN"),
+  decideProductChangeRequest,
 );
 
 adminRouter.get(
@@ -94,11 +113,30 @@ adminRouter.patch(
   authMiddlewareRequireRole("ADMIN"),
   updateUserRole,
 );
+adminRouter.patch(
+  "/users/:userId/profile",
+  authMiddleware,
+  authMiddlewareRequireRole("ADMIN"),
+  updateUserProfile,
+);
+adminRouter.post(
+  "/users/:userId/reset-password",
+  authMiddleware,
+  authMiddlewareRequireRole("ADMIN"),
+  sendAdminPasswordReset,
+);
 adminRouter.delete(
   "/users/:userId",
   authMiddleware,
   authMiddlewareRequireRole("ADMIN"),
   deleteUserGDPR,
+);
+
+adminRouter.get(
+  "/webhooks/events",
+  authMiddleware,
+  authMiddlewareRequireRole("ADMIN"),
+  listAdminWebhookEvents,
 );
 
 adminRouter.post(

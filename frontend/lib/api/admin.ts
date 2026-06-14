@@ -1,5 +1,6 @@
 import { userAuthorization } from "@/hook/userAuthorization";
 import axios from "axios";
+import type { ProductChangeRequest, WebhookEvent } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL;
 
@@ -227,6 +228,29 @@ export const updateUserRole = async (userId: string, roles: string[]): Promise<{
   return response.data;
 };
 
+export const updateUserProfile = async (
+  userId: string,
+  input: { firstName?: string; lastName?: string; isVerified?: boolean },
+): Promise<{ success: boolean; message: string; user: UserAdmin }> => {
+  const headers = await userAuthorization();
+  const response = await axios.patch<{ success: boolean; message: string; user: UserAdmin }>(
+    `${API_BASE}/admin/users/${userId}/profile`,
+    input,
+    { headers, withCredentials: true },
+  );
+  return response.data;
+};
+
+export const sendUserPasswordReset = async (userId: string): Promise<{ success: boolean; message: string }> => {
+  const headers = await userAuthorization();
+  const response = await axios.post<{ success: boolean; message: string }>(
+    `${API_BASE}/admin/users/${userId}/reset-password`,
+    {},
+    { headers, withCredentials: true },
+  );
+  return response.data;
+};
+
 export const deleteUserGDPR = async (userId: string): Promise<{ success: boolean; message: string }> => {
   const headers = await userAuthorization();
   const response = await axios.delete<{ success: boolean; message: string }>(
@@ -235,3 +259,51 @@ export const deleteUserGDPR = async (userId: string): Promise<{ success: boolean
   );
   return response.data;
 };
+
+export interface AdminWebhookEventFilters {
+  status?: WebhookEvent["status"] | "";
+  eventType?: string;
+  mode?: WebhookEvent["mode"] | "";
+}
+
+export async function listAdminWebhookEvents(
+  filters?: AdminWebhookEventFilters,
+): Promise<WebhookEvent[]> {
+  const headers = await userAuthorization();
+  const response = await axios.get<{ events: WebhookEvent[] }>(
+    `${API_BASE}/admin/webhooks/events`,
+    {
+      headers,
+      withCredentials: true,
+      params: {
+        ...(filters?.status ? { status: filters.status } : {}),
+        ...(filters?.eventType ? { eventType: filters.eventType } : {}),
+        ...(filters?.mode ? { mode: filters.mode } : {}),
+      },
+    },
+  );
+  return response.data.events;
+}
+
+export async function getPendingProductChangeRequests(): Promise<ProductChangeRequest[]> {
+  const headers = await userAuthorization();
+  const response = await axios.get<{ changeRequests: ProductChangeRequest[] }>(
+    `${API_BASE}/admin/products/changes/pending`,
+    { headers, withCredentials: true },
+  );
+  return response.data.changeRequests;
+}
+
+export async function decideProductChangeRequest(
+  changeRequestId: string,
+  decision: "APPROVE" | "REJECT",
+  rejectionReason?: string,
+): Promise<{ success: boolean; message: string }> {
+  const headers = await userAuthorization();
+  const response = await axios.post<{ success: boolean; message: string }>(
+    `${API_BASE}/admin/products/changes/${changeRequestId}/decision`,
+    { decision, rejectionReason },
+    { headers, withCredentials: true },
+  );
+  return response.data;
+}

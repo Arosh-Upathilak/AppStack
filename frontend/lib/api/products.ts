@@ -3,7 +3,7 @@ import { PRODUCTS, CATEGORIES } from "@/data/mock";
 import { delay } from "./client";
 import { withMockFallback } from "./demo";
 import { userAuthorization } from "@/hook/userAuthorization";
-import type { BillingInterval, Product, ProductPlan, Review, WebhookEvent } from "./types";
+import type { BillingInterval, Product, ProductChangeRequest, ProductPlan, Review, WebhookEvent } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL;
 
@@ -213,6 +213,51 @@ export async function decideProduct(
   return res.data.product;
 }
 
+export async function createProductChangeRequest(
+  productId: string,
+  input: { type: "UPDATE" | "DELETE"; product?: Partial<ProductInput> },
+): Promise<ProductChangeRequest> {
+  const headers = await userAuthorization();
+  const res = await axios.post<{ changeRequest: ProductChangeRequest }>(
+    `${API_BASE}/seller/products/${productId}/change-requests`,
+    input,
+    {
+      headers,
+      withCredentials: true,
+    },
+  );
+  return res.data.changeRequest;
+}
+
+export async function listPendingProductChangeRequests(): Promise<ProductChangeRequest[]> {
+  const headers = await userAuthorization();
+  const res = await axios.get<{ changeRequests: ProductChangeRequest[] }>(
+    `${API_BASE}/admin/products/changes/pending`,
+    {
+      headers,
+      withCredentials: true,
+    },
+  );
+  return res.data.changeRequests;
+}
+
+export async function decideProductChangeRequest(
+  changeRequestId: string,
+  decision: "APPROVE" | "REJECT",
+  rejectionReason?: string,
+): Promise<{ success: boolean; message: string }> {
+  const headers = await userAuthorization();
+  const res = await axios.post<{ success: boolean; message: string }>(
+    `${API_BASE}/admin/products/changes/${changeRequestId}/decision`,
+    { decision, rejectionReason },
+    {
+      headers,
+      withCredentials: true,
+    },
+  );
+  return res.data;
+}
+
 export interface WebhookEventFilters {
   status?: WebhookEvent["status"] | "";
   eventType?: string;
@@ -252,6 +297,24 @@ export async function sendTestWebhookEvent(productId: string): Promise<WebhookEv
   return res.data.event;
 }
 
+export async function updateWebhookConfig(
+  productId: string,
+  webhookUrl: string,
+): Promise<Pick<Product, "id" | "webhookUrl" | "webhookTested" | "webhookSecret">> {
+  const headers = await userAuthorization();
+  const res = await axios.put<{
+    product: Pick<Product, "id" | "webhookUrl" | "webhookTested" | "webhookSecret">;
+  }>(
+    `${API_BASE}/webhooks/products/${productId}/config`,
+    { webhookUrl },
+    {
+      headers,
+      withCredentials: true,
+    },
+  );
+  return res.data.product;
+}
+
 export async function retryWebhookEvent(eventId: string): Promise<WebhookEvent> {
   const headers = await userAuthorization();
   const res = await axios.post<{ event: WebhookEvent }>(
@@ -265,19 +328,24 @@ export async function retryWebhookEvent(eventId: string): Promise<WebhookEvent> 
   return res.data.event;
 }
 
-export async function checkReviewEligibility(productId: string): Promise<boolean> {
+export interface ReviewEligibility {
+  eligible: boolean;
+  existingReview?: Review | null;
+}
+
+export async function checkReviewEligibility(productId: string): Promise<ReviewEligibility> {
   const headers = await userAuthorization();
   try {
-    const res = await axios.get<{ eligible: boolean }>(
+    const res = await axios.get<ReviewEligibility>(
       `${API_BASE}/products/${productId}/review-eligibility`,
       {
         headers,
         withCredentials: true,
       }
     );
-    return res.data.eligible;
+    return res.data;
   } catch {
-    return false;
+    return { eligible: false, existingReview: null };
   }
 }
 

@@ -5,6 +5,7 @@ import { toast } from "react-toastify";
 import Icon from "@/components/Icon";
 import {
   createProduct,
+  createProductChangeRequest,
   listSellerProducts,
   type ProductPlanInput,
   submitProduct,
@@ -39,6 +40,7 @@ export default function SellerProductsPage() {
   const [similarTo, setSimilarTo] = useState("");
   const [plans, setPlans] = useState<DraftPlan[]>([emptyPlan()]);
   const [selectedWebhookProduct, setSelectedWebhookProduct] = useState<Product | null>(null);
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
   async function reload() {
     try {
@@ -107,6 +109,17 @@ export default function SellerProductsPage() {
       toast.success("Product submitted for approval");
     } catch (err) {
       toast.error(getErrorMessage(err, "Failed to submit product"));
+    }
+  }
+
+  async function handleDeleteRequest(product: Product) {
+    if (!confirm(`Request admin approval to unlist ${product.name}? New purchases will be blocked while the request is pending.`)) return;
+    try {
+      await createProductChangeRequest(product.id, { type: "DELETE" });
+      toast.success("Deletion request submitted for approval");
+      void reload();
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Failed to request deletion"));
     }
   }
 
@@ -213,9 +226,20 @@ export default function SellerProductsPage() {
                         </button>
                       )}
                       {product.status === "APPROVED" && (
-                        <button type="button" className="btn btn-secondary btn-sm" onClick={() => setSelectedWebhookProduct(product)}>
-                          <Icon name="settings" size={11} /> Webhooks
-                        </button>
+                        <>
+                          <button type="button" className="btn btn-secondary btn-sm" onClick={() => setEditingProduct(product)} disabled={!!product.pendingChangeRequest}>
+                            <Icon name="edit" size={11} /> Edit
+                          </button>
+                          <button type="button" className="btn btn-secondary btn-sm" onClick={() => setSelectedWebhookProduct(product)}>
+                            <Icon name="settings" size={11} /> Webhooks
+                          </button>
+                          <button type="button" className="btn btn-secondary btn-sm" onClick={() => handleDeleteRequest(product)} disabled={!!product.pendingChangeRequest}>
+                            <Icon name="trash" size={11} /> Delete
+                          </button>
+                        </>
+                      )}
+                      {product.pendingChangeRequest && (
+                        <span className="muted" style={{ fontSize: 11 }}>Pending {product.pendingChangeRequest.type.toLowerCase()}</span>
                       )}
                     </td>
                   </tr>
@@ -231,6 +255,129 @@ export default function SellerProductsPage() {
           onClose={() => setSelectedWebhookProduct(null)}
         />
       )}
+      {editingProduct && (
+        <EditRequestModal
+          product={editingProduct}
+          onClose={() => setEditingProduct(null)}
+          onSubmitted={() => {
+            setEditingProduct(null);
+            void reload();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function draftPlansFromProduct(product: Product): DraftPlan[] {
+  return product.plans.map(plan => ({
+    localId: plan.id,
+    identifier: plan.identifier,
+    name: plan.name,
+    features: plan.features,
+    priceCents: plan.priceCents,
+    currency: plan.currency,
+    billingInterval: plan.billingInterval,
+    isActive: plan.isActive,
+  }));
+}
+
+function EditRequestModal({
+  product,
+  onClose,
+  onSubmitted,
+}: {
+  product: Product;
+  onClose: () => void;
+  onSubmitted: () => void;
+}) {
+  const [name, setName] = useState(product.name);
+  const [shortDescription, setShortDescription] = useState(product.shortDescription);
+  const [description, setDescription] = useState(product.description);
+  const [category, setCategory] = useState(product.category);
+  const [similarTo, setSimilarTo] = useState(product.similarTo.join(", "));
+  const [plans, setPlans] = useState<DraftPlan[]>(draftPlansFromProduct(product));
+  const [submitting, setSubmitting] = useState(false);
+
+  function updatePlan(localId: string, patch: Partial<DraftPlan>) {
+    setPlans(prev => prev.map(plan => plan.localId === localId ? { ...plan, ...patch } : plan));
+  }
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    try {
+      setSubmitting(true);
+      await createProductChangeRequest(product.id, {
+        type: "UPDATE",
+        product: {
+          name,
+          shortDescription,
+          description,
+          category,
+          similarTo: similarTo.split(",").map(item => item.trim()).filter(Boolean),
+          plans: plans.map(plan => ({
+            identifier: plan.identifier || undefined,
+            name: plan.name,
+            features: plan.features,
+            priceCents: Number(plan.priceCents),
+            currency: plan.currency,
+            billingInterval: plan.billingInterval,
+            isActive: plan.isActive,
+          })),
+        },
+      });
+      toast.success("Product change request submitted");
+      onSubmitted();
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Failed to submit product change"));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <form className="modal" onSubmit={submit} onClick={e => e.stopPropagation()} style={{ width: "min(720px, 92vw)", maxHeight: "86vh", overflowY: "auto" }}>
+        <div className="row" style={{ justifyContent: "space-between", marginBottom: 16 }}>
+          <div>
+            <h3 style={{ margin: 0, fontSize: 17, fontWeight: 600 }}>Request product edit</h3>
+            <div className="muted" style={{ fontSize: 12.5, marginTop: 2 }}>Changes go live only after admin approval.</div>
+          </div>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}><Icon name="x" size={14} /></button>
+        </div>
+        <div style={{ display: "grid", gap: 12 }}>
+          <input className="input" value={name} onChange={e => setName(e.target.value)} required />
+          <input className="input" value={shortDescription} onChange={e => setShortDescription(e.target.value)} required />
+          <textarea className="input" value={description} onChange={e => setDescription(e.target.value)} required style={{ minHeight: 90, resize: "vertical" }} />
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <input className="input" value={category} onChange={e => setCategory(e.target.value)} required />
+            <input className="input" value={similarTo} onChange={e => setSimilarTo(e.target.value)} />
+          </div>
+          <div className="row" style={{ justifyContent: "space-between" }}>
+            <strong style={{ fontSize: 13 }}>Plans</strong>
+            <button type="button" className="btn btn-secondary btn-sm" onClick={() => setPlans(prev => [...prev, emptyPlan()])}>
+              <Icon name="plus" size={11} /> Add plan
+            </button>
+          </div>
+          {plans.map(plan => (
+            <div key={plan.localId} className="card" style={{ padding: 12, display: "grid", gap: 10 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 120px", gap: 10 }}>
+                <input className="input" placeholder="Plan name" value={plan.name} onChange={e => updatePlan(plan.localId, { name: e.target.value })} required />
+                <input className="input" type="number" min={0} value={plan.priceCents} onChange={e => updatePlan(plan.localId, { priceCents: Number(e.target.value) })} required />
+              </div>
+              <input className="input" value={plan.features.join(", ")} onChange={e => updatePlan(plan.localId, { features: e.target.value.split(",").map(item => item.trim()).filter(Boolean) })} />
+              <label className="row gap-2" style={{ fontSize: 12.5 }}>
+                <input type="checkbox" checked={plan.isActive} onChange={e => updatePlan(plan.localId, { isActive: e.target.checked })} />
+                Active plan
+              </label>
+            </div>
+          ))}
+        </div>
+        <div className="row gap-2" style={{ justifyContent: "flex-end", marginTop: 18 }}>
+          <button type="button" className="btn btn-secondary" onClick={onClose} disabled={submitting}>Cancel</button>
+          <button type="submit" className="btn btn-primary" disabled={submitting}>{submitting ? "Submitting..." : "Submit for approval"}</button>
+        </div>
+      </form>
     </div>
   );
 }

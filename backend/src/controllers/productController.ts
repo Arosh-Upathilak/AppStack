@@ -1,8 +1,10 @@
 import { Request, Response } from "express";
-import { BillingInterval, ProductStatus } from "@prisma/client";
+import { BillingInterval, Prisma, ProductStatus } from "@prisma/client";
 import { AppError, asyncHandler } from "../utils/errorHandler";
 import prisma from "../utils/prisma";
 import { sendNotification } from "../socket/socketConnect";
+import { sendWebhookEvent } from "../services/webhookWorker";
+import { formatMoney, sendTransactionEmail } from "../utils/emailNotifications";
 
 type PlanInput = {
   identifier?: string;
@@ -94,7 +96,7 @@ function sellerDisplayName(seller: {
   return fullName || seller.email;
 }
 
-function serializeProduct(product: any, options: { includeWebhookSecret?: boolean } = {}) {
+function serializeProduct(product: any, options: { includeWebhookSecret?: boolean } = {}): any {
   const plans = product.plans ?? [];
   const reviews = product.reviews ?? [];
   const minPlan = plans.find((plan: any) => plan.isActive) ?? plans[0];
@@ -119,6 +121,9 @@ function serializeProduct(product: any, options: { includeWebhookSecret?: boolea
     publishedAt: product.publishedAt,
     createdAt: product.createdAt,
     updatedAt: product.updatedAt,
+    pendingChangeRequest: product.changeRequests?.[0]
+      ? serializeProductChangeRequest(product.changeRequests[0], { includeProduct: false })
+      : undefined,
     rating: averageRating(reviews),
     reviewsCount: reviews.length,
     fromCents: minPlan?.priceCents ?? 0,
@@ -136,6 +141,38 @@ function serializeProduct(product: any, options: { includeWebhookSecret?: boolea
       createdAt: plan.createdAt,
       updatedAt: plan.updatedAt,
     })),
+  };
+}
+
+function serializeProductChangeRequest(
+  request: any,
+  options: { includeProduct?: boolean } = {},
+): any {
+  return {
+    id: request.id,
+    productId: request.productId,
+    sellerId: request.sellerId,
+    type: request.type,
+    status: request.status,
+    payload: request.payload,
+    rejectionReason: request.rejectionReason,
+    submittedAt: request.submittedAt,
+    reviewedAt: request.reviewedAt,
+    reviewedById: request.reviewedById,
+    createdAt: request.createdAt,
+    updatedAt: request.updatedAt,
+    product:
+      options.includeProduct && request.product
+        ? serializeProduct(request.product, { includeWebhookSecret: true })
+        : undefined,
+    seller: request.seller
+      ? {
+          id: request.seller.id,
+          email: request.seller.email,
+          firstName: request.seller.firstName,
+          lastName: request.seller.lastName,
+        }
+      : undefined,
   };
 }
 
@@ -205,6 +242,93 @@ async function notifyAdmins(title: string, message: string) {
     });
     sendNotification(admin.id, notification);
   }
+}
+
+function productPayloadFromInput(input: ProductInput, existingProduct: any) {
+  const nextName = input.name?.trim() || existingProduct.name;
+  const plans = input.plans
+    ? normalizePlans(input.plans)
+    : existingProduct.plans.map((plan: any) => ({
+        identifier: plan.identifier,
+        name: plan.name,
+        features: plan.features ?? [],
+        priceCents: plan.priceCents,
+        currency: plan.currency,
+        billingInterval: plan.billingInterval,
+        isActive: plan.isActive,
+      }));
+
+  if (plans.length === 0) {
+    throw new AppError("At least one plan is required", 400);
+  }
+
+  return {
+    name: nextName,
+    shortDescription: input.shortDescription?.trim() || existingProduct.shortDescription,
+    description: input.description?.trim() || existingProduct.description,
+    category: input.category?.trim() || existingProduct.category,
+    similarTo: input.similarTo ?? existingProduct.similarTo,
+    hue: input.hue ?? existingProduct.hue,
+    webhookUrl:
+      input.webhookUrl === undefined
+        ? existingProduct.webhookUrl
+        : input.webhookUrl.trim() || null,
+    webhookTested: input.webhookTested ?? existingProduct.webhookTested,
+    plans,
+  };
+}
+
+async function applyApprovedProductUpdate(tx: any, product: any, payload: any, adminId: string) {
+  const plans = normalizePlans(payload.plans);
+  const incomingIdentifiers = plans.map((plan) => plan.identifier);
+  const existingPlans = await tx.productPlan.findMany({
+    where: { productId: product.id },
+  });
+
+  await tx.productPlan.updateMany({
+    where: {
+      productId: product.id,
+      identifier: { notIn: incomingIdentifiers },
+    },
+    data: { isActive: false },
+  });
+
+  for (const plan of plans) {
+    const existing = existingPlans.find((candidate: any) => candidate.identifier === plan.identifier);
+    if (existing) {
+      await tx.productPlan.update({
+        where: { id: existing.id },
+        data: plan,
+      });
+    } else {
+      await tx.productPlan.create({
+        data: {
+          ...plan,
+          productId: product.id,
+        },
+      });
+    }
+  }
+
+  return tx.product.update({
+    where: { id: product.id },
+    data: {
+      name: payload.name,
+      slug: await uniqueSlug(payload.name, product.id),
+      shortDescription: payload.shortDescription,
+      description: payload.description,
+      category: payload.category,
+      similarTo: payload.similarTo ?? [],
+      hue: payload.hue ?? product.hue,
+      webhookUrl: payload.webhookUrl,
+      webhookTested: payload.webhookTested ?? product.webhookTested,
+      status: "APPROVED",
+      rejectionReason: null,
+      reviewedAt: new Date(),
+      reviewedById: adminId,
+    },
+    include: productInclude,
+  });
 }
 
 export const listProducts = asyncHandler(async (req: Request, res: Response) => {
@@ -299,7 +423,14 @@ export const listSellerProducts = asyncHandler(
       where: {
         sellerId: userId,
       },
-      include: productInclude,
+      include: {
+        ...productInclude,
+        changeRequests: {
+          where: { status: "PENDING" },
+          orderBy: { submittedAt: "desc" },
+          take: 1,
+        },
+      },
       orderBy: {
         updatedAt: "desc",
       },
@@ -578,6 +709,365 @@ export const decideProduct = asyncHandler(async (req: Request, res: Response) =>
   });
 });
 
+export const createProductChangeRequest = asyncHandler(
+  async (req: Request, res: Response) => {
+    const userId = (req as any).user.id;
+    const productId = String(req.params.productId);
+    const { type, product: productInput } = req.body as {
+      type?: "UPDATE" | "DELETE";
+      product?: ProductInput;
+    };
+
+    await requireApprovedSeller(userId);
+
+    if (type !== "UPDATE" && type !== "DELETE") {
+      throw new AppError("type must be UPDATE or DELETE", 400);
+    }
+
+    const existingProduct = await prisma.product.findFirst({
+      where: {
+        id: productId,
+        sellerId: userId,
+      },
+      include: {
+        plans: true,
+      },
+    });
+
+    if (!existingProduct) {
+      throw new AppError("Product not found", 404);
+    }
+
+    if (existingProduct.status !== "APPROVED") {
+      throw new AppError("Only approved products can request approved changes or deletion", 400);
+    }
+
+    const existingPending = await prisma.productChangeRequest.findFirst({
+      where: {
+        productId: existingProduct.id,
+        status: "PENDING",
+      },
+    });
+
+    if (existingPending) {
+      throw new AppError("This product already has a pending change request", 400);
+    }
+
+    const payload = type === "UPDATE"
+      ? productPayloadFromInput(productInput ?? {}, existingProduct)
+      : null;
+
+    const changeRequest = await prisma.$transaction(async (tx) => {
+      const request = await tx.productChangeRequest.create({
+        data: {
+          productId: existingProduct.id,
+          sellerId: userId,
+          type,
+          payload: payload ?? Prisma.JsonNull,
+        },
+        include: {
+          product: { include: productInclude },
+          seller: {
+            select: {
+              id: true,
+              email: true,
+              firstName: true,
+              lastName: true,
+            },
+          },
+        },
+      });
+
+      if (type === "DELETE") {
+        await tx.product.update({
+          where: { id: existingProduct.id },
+          data: { status: "PENDING_DELETION" },
+        });
+      }
+
+      return request;
+    });
+
+    await notifyAdmins(
+      type === "DELETE" ? "Product Deletion Pending" : "Product Change Pending",
+      `${existingProduct.name} has a pending ${type.toLowerCase()} request.`,
+    );
+
+    return res.status(201).json({
+      success: true,
+      message: `${type === "DELETE" ? "Deletion" : "Change"} request submitted for admin approval`,
+      changeRequest: serializeProductChangeRequest(changeRequest, { includeProduct: true }),
+    });
+  },
+);
+
+export const listPendingProductChangeRequests = asyncHandler(
+  async (_req: Request, res: Response) => {
+    const requests = await prisma.productChangeRequest.findMany({
+      where: { status: "PENDING" },
+      include: {
+        product: { include: productInclude },
+        seller: {
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+          },
+        },
+      },
+      orderBy: { submittedAt: "asc" },
+    });
+
+    return res.status(200).json({
+      success: true,
+      changeRequests: requests.map((request) =>
+        serializeProductChangeRequest(request, { includeProduct: true }),
+      ),
+    });
+  },
+);
+
+export const decideProductChangeRequest = asyncHandler(
+  async (req: Request, res: Response) => {
+    const adminId = (req as any).user.id;
+    const changeRequestId = String(req.params.changeRequestId);
+    const { decision, rejectionReason } = req.body as {
+      decision?: "APPROVE" | "REJECT";
+      rejectionReason?: string;
+    };
+
+    if (decision !== "APPROVE" && decision !== "REJECT") {
+      throw new AppError("decision must be APPROVE or REJECT", 400);
+    }
+
+    const request = await prisma.productChangeRequest.findUnique({
+      where: { id: changeRequestId },
+      include: {
+        product: {
+          include: {
+            ...productInclude,
+            subscriptions: {
+              where: {
+                status: { in: ["PENDING", "ACTIVE", "CHANGE_PENDING", "CANCEL_PENDING", "PAST_DUE"] },
+              },
+              include: {
+                buyer: true,
+                plan: true,
+                invoices: {
+                  where: { status: "PAID" },
+                  orderBy: { issuedAt: "desc" },
+                  take: 1,
+                },
+              },
+            },
+          },
+        },
+        seller: {
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+          },
+        },
+      },
+    });
+
+    if (!request) {
+      throw new AppError("Product change request not found", 404);
+    }
+
+    if (request.status !== "PENDING") {
+      throw new AppError("Product change request has already been decided", 400);
+    }
+
+    if (decision === "REJECT") {
+      const updated = await prisma.$transaction(async (tx) => {
+        const rejected = await tx.productChangeRequest.update({
+          where: { id: request.id },
+          data: {
+            status: "REJECTED",
+            rejectionReason: rejectionReason?.trim() || "Change request did not meet marketplace requirements.",
+            reviewedAt: new Date(),
+            reviewedById: adminId,
+          },
+          include: {
+            product: { include: productInclude },
+            seller: {
+              select: {
+                id: true,
+                email: true,
+                firstName: true,
+                lastName: true,
+              },
+            },
+          },
+        });
+
+        if (request.type === "DELETE") {
+          await tx.product.update({
+            where: { id: request.productId },
+            data: { status: "APPROVED" },
+          });
+        }
+
+        return rejected;
+      });
+
+      const notification = await prisma.notification.create({
+        data: {
+          userId: request.sellerId,
+          title: request.type === "DELETE" ? "Product Deletion Rejected" : "Product Change Rejected",
+          message: `${request.product.name} change request was rejected. ${updated.rejectionReason}`,
+          type: "SYSTEM_ALERT",
+          priority: "NORMAL",
+        },
+      });
+      sendNotification(request.sellerId, notification);
+
+      return res.status(200).json({
+        success: true,
+        message: "Product change request rejected",
+        changeRequest: serializeProductChangeRequest(updated, { includeProduct: true }),
+      });
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      const updatedRequest = await tx.productChangeRequest.update({
+        where: { id: request.id },
+        data: {
+          status: "APPROVED",
+          reviewedAt: new Date(),
+          reviewedById: adminId,
+        },
+      });
+
+      if (request.type === "UPDATE") {
+        const product = await applyApprovedProductUpdate(tx, request.product, request.payload, adminId);
+        return { request: updatedRequest, product, canceledSubscriptions: [] as any[] };
+      }
+
+      const canceledSubscriptions = [];
+      for (const subscription of request.product.subscriptions) {
+        const invoice = subscription.invoices[0];
+
+        await tx.subscription.update({
+          where: { id: subscription.id },
+          data: {
+            status: "CANCELED",
+            canceledAt: new Date(),
+            integrationStatusMessage: "Product was unlisted by marketplace administrators.",
+          },
+        });
+
+        if (invoice) {
+          const existingRefund = await tx.refundRequest.findFirst({
+            where: { invoiceId: invoice.id },
+          });
+
+          if (!existingRefund) {
+            await tx.refundRequest.create({
+              data: {
+                buyerId: subscription.buyerId,
+                subscriptionId: subscription.id,
+                invoiceId: invoice.id,
+                amountCents: invoice.amountCents,
+                reason: "Automatic refund after product deletion.",
+                status: "APPROVED",
+              },
+            });
+          }
+
+          await tx.invoice.update({
+            where: { id: invoice.id },
+            data: { status: "REFUNDED" },
+          });
+
+          await tx.transaction.create({
+            data: {
+              sellerId: request.product.sellerId,
+              amountCents: -invoice.amountCents,
+              type: "REFUND",
+              status: "AVAILABLE",
+              description: `Product deletion refund: ${request.product.name} - ${invoice.number}`,
+              invoiceId: invoice.id,
+            },
+          });
+        }
+
+        canceledSubscriptions.push({ ...subscription, invoice });
+      }
+
+      const product = await tx.product.update({
+        where: { id: request.productId },
+        data: {
+          status: "UNLISTED",
+          reviewedAt: new Date(),
+          reviewedById: adminId,
+        },
+        include: productInclude,
+      });
+
+      return { request: updatedRequest, product, canceledSubscriptions };
+    });
+
+    const sellerNotification = await prisma.notification.create({
+      data: {
+        userId: request.sellerId,
+        title: request.type === "DELETE" ? "Product Deletion Approved" : "Product Change Approved",
+        message:
+          request.type === "DELETE"
+            ? `${request.product.name} was unlisted and active current-period subscriptions were canceled.`
+            : `${request.product.name} changes are now live in the marketplace.`,
+        type: "SYSTEM_ALERT",
+        priority: "NORMAL",
+      },
+    });
+    sendNotification(request.sellerId, sellerNotification);
+
+    for (const subscription of result.canceledSubscriptions) {
+      const buyerNotification = await prisma.notification.create({
+        data: {
+          userId: subscription.buyerId,
+          title: "Subscription Canceled",
+          message: `${request.product.name} was unlisted. Your subscription has been canceled${subscription.invoice ? " and refunded." : "."}`,
+          type: "ORDER_UPDATE",
+          priority: "HIGH",
+        },
+      });
+      sendNotification(subscription.buyerId, buyerNotification);
+
+      await sendTransactionEmail({
+        to: subscription.buyer.email,
+        subject: `${request.product.name} subscription canceled`,
+        title: "Subscription canceled after product removal",
+        message: `${request.product.name} was unlisted from AppStack. Your subscription has been canceled${subscription.invoice ? " and the current paid invoice has been refunded." : "."}`,
+        details: {
+          Product: request.product.name,
+          Plan: subscription.plan.name,
+          Refund: subscription.invoice
+            ? formatMoney(subscription.invoice.amountCents, subscription.invoice.currency)
+            : "No paid invoice found",
+        },
+      });
+
+      await sendWebhookEvent(request.productId, "subscription.canceled", {
+        subscriptionId: subscription.id,
+        buyerEmail: subscription.recipientEmail,
+        planIdentifier: subscription.plan.identifier,
+        reason: "product_unlisted",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Product change request approved",
+      product: serializeProduct(result.product, { includeWebhookSecret: true }),
+    });
+  },
+);
+
 export const checkReviewEligibility = asyncHandler(
   async (req: Request, res: Response) => {
     const productId = String(req.params.productId);
@@ -603,9 +1093,19 @@ export const checkReviewEligibility = asyncHandler(
       },
     });
 
+    const existingReview = await prisma.review.findUnique({
+      where: {
+        productId_userId: {
+          productId: product.id,
+          userId,
+        },
+      },
+    });
+
     return res.status(200).json({
       success: true,
-      eligible: !!purchase,
+      eligible: !!purchase && !existingReview,
+      existingReview,
     });
   }
 );
@@ -647,6 +1147,19 @@ export const createProductReview = asyncHandler(
 
     if (!purchase) {
       throw new AppError("You must be a verified purchaser of this product to leave a review.", 403);
+    }
+
+    const existingReview = await prisma.review.findUnique({
+      where: {
+        productId_userId: {
+          productId: product.id,
+          userId,
+        },
+      },
+    });
+
+    if (existingReview) {
+      throw new AppError("You have already reviewed this product.", 400);
     }
 
     const user = await prisma.user.findUnique({

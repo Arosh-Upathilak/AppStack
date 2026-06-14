@@ -3,6 +3,7 @@ import { Request, Response } from "express";
 import { asyncHandler, AppError } from "../utils/errorHandler";
 import prisma from "../utils/prisma";
 import { sendNotification } from "../socket/socketConnect";
+import { formatMoney, sendTransactionEmail } from "../utils/emailNotifications";
 
 type AckAction = "activate" | "change_applied" | "cancel_applied";
 
@@ -118,7 +119,7 @@ async function handleAcknowledgement(
 
   const subscription = await prisma.subscription.findUnique({
     where: { id: subscriptionId },
-    include: { product: true, plan: true },
+    include: { product: true, plan: true, buyer: true },
   });
 
   if (!subscription) {
@@ -190,7 +191,7 @@ async function handleAcknowledgement(
           status: "ACTIVE",
           integrationStatusMessage: null,
         },
-        include: { product: true, plan: true },
+        include: { product: true, plan: true, buyer: true },
       });
 
       await createSettlementIfMissing(tx, activated, new Date());
@@ -202,6 +203,17 @@ async function handleAcknowledgement(
       "Subscription Activated",
       `${updated.product.name} has confirmed your subscription activation.`,
     );
+    await sendTransactionEmail({
+      to: updated.buyer.email,
+      subject: "Your AppStack subscription is active",
+      title: "Subscription activated",
+      message: `${updated.product.name} confirmed your subscription activation.`,
+      details: {
+        Product: updated.product.name,
+        Plan: updated.plan.name,
+        Amount: formatMoney(updated.plan.priceCents * updated.seats, updated.plan.currency),
+      },
+    });
 
     return updated;
   }
@@ -242,7 +254,7 @@ async function handleAcknowledgement(
       canceledAt: new Date(),
       integrationStatusMessage: null,
     },
-    include: { product: true, plan: true },
+    include: { product: true, plan: true, buyer: true },
   });
 
   await notifyLifecycle(
@@ -250,6 +262,16 @@ async function handleAcknowledgement(
     "Subscription Canceled",
     `${updated.product.name} confirmed your subscription cancellation.`,
   );
+  await sendTransactionEmail({
+    to: updated.buyer?.email,
+    subject: "Your AppStack subscription was canceled",
+    title: "Subscription canceled",
+    message: `${updated.product.name} confirmed your subscription cancellation.`,
+    details: {
+      Product: updated.product.name,
+      Plan: updated.plan.name,
+    },
+  });
 
   return updated;
 }

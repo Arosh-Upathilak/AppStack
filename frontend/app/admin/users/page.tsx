@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import Icon from "@/components/Icon";
 import { toast } from "react-toastify";
-import { getUsers, updateUserRole, deleteUserGDPR } from "@/lib/api/admin";
+import { getUsers, updateUserRole, deleteUserGDPR, sendUserPasswordReset, updateUserProfile } from "@/lib/api/admin";
 import type { UserAdmin } from "@/lib/api/admin";
 import { getErrorMessage } from "@/lib/api/errors";
 
@@ -20,7 +20,11 @@ export default function AdminUsersPage() {
 
   // Role Edit Modal State
   const [editingUser, setEditingUser] = useState<UserAdmin | null>(null);
+  const [editingProfileUser, setEditingProfileUser] = useState<UserAdmin | null>(null);
   const [selectedRoles, setSelectedRoles] = useState<UserRole[]>([]);
+  const [profileFirstName, setProfileFirstName] = useState("");
+  const [profileLastName, setProfileLastName] = useState("");
+  const [profileVerified, setProfileVerified] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   const loadUsers = useCallback(async (pageNum = 1) => {
@@ -47,6 +51,13 @@ export default function AdminUsersPage() {
   const handleOpenEditRoles = (user: UserAdmin) => {
     setEditingUser(user);
     setSelectedRoles([...user.roles]);
+  };
+
+  const handleOpenEditProfile = (user: UserAdmin) => {
+    setEditingProfileUser(user);
+    setProfileFirstName(user.firstName ?? "");
+    setProfileLastName(user.lastName ?? "");
+    setProfileVerified(user.isVerified);
   };
 
   const handleCloseEditRoles = () => {
@@ -79,6 +90,39 @@ export default function AdminUsersPage() {
       loadUsers(page);
     } catch (err) {
       toast.error(getErrorMessage(err, "Failed to update user roles"));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleProfileSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingProfileUser) return;
+
+    try {
+      setSubmitting(true);
+      const res = await updateUserProfile(editingProfileUser.id, {
+        firstName: profileFirstName,
+        lastName: profileLastName,
+        isVerified: profileVerified,
+      });
+      toast.success(res.message || "User profile updated successfully!");
+      setEditingProfileUser(null);
+      void loadUsers(page);
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Failed to update user profile"));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleSendReset = async (user: UserAdmin) => {
+    try {
+      setSubmitting(true);
+      const res = await sendUserPasswordReset(user.id);
+      toast.success(res.message || "Password reset email sent.");
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Failed to send password reset email"));
     } finally {
       setSubmitting(false);
     }
@@ -240,12 +284,29 @@ export default function AdminUsersPage() {
                           {!isAnonymized && (
                             <>
                               <button
+                                onClick={() => handleOpenEditProfile(user)}
+                                className="btn btn-secondary btn-sm"
+                                style={{ fontSize: 12 }}
+                                title="Edit Profile"
+                              >
+                                <Icon name="users" size={12} /> Profile
+                              </button>
+                              <button
                                 onClick={() => handleOpenEditRoles(user)}
                                 className="btn btn-secondary btn-sm"
                                 style={{ fontSize: 12 }}
                                 title="Edit Roles"
                               >
                                 <Icon name="edit" size={12} /> Roles
+                              </button>
+                              <button
+                                onClick={() => handleSendReset(user)}
+                                className="btn btn-secondary btn-sm"
+                                style={{ fontSize: 12 }}
+                                title="Send Password Reset"
+                                disabled={submitting}
+                              >
+                                <Icon name="mail" size={12} /> Reset
                               </button>
                               <button
                                 onClick={() => handleDeleteGDPR(user)}
@@ -356,6 +417,41 @@ export default function AdminUsersPage() {
                 </button>
                 <button type="submit" className="btn btn-primary" disabled={submitting}>
                   {submitting ? "Updating..." : "Save changes"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {editingProfileUser && (
+        <div className="modal-overlay" onClick={() => setEditingProfileUser(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 380 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>Edit user profile</h3>
+              <button onClick={() => setEditingProfileUser(null)} className="btn btn-ghost btn-sm" style={{ padding: 4 }}>
+                <Icon name="x" size={16} />
+              </button>
+            </div>
+
+            <form onSubmit={handleProfileSubmit} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <div>
+                <label className="field-label">First name</label>
+                <input className="input" value={profileFirstName} onChange={e => setProfileFirstName(e.target.value)} />
+              </div>
+              <div>
+                <label className="field-label">Last name</label>
+                <input className="input" value={profileLastName} onChange={e => setProfileLastName(e.target.value)} />
+              </div>
+              <label className="row gap-2" style={{ fontSize: 13 }}>
+                <input type="checkbox" checked={profileVerified} onChange={e => setProfileVerified(e.target.checked)} />
+                Verified account
+              </label>
+              <div className="row gap-2" style={{ justifyContent: "flex-end", marginTop: 8 }}>
+                <button type="button" className="btn btn-secondary" onClick={() => setEditingProfileUser(null)} disabled={submitting}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-primary" disabled={submitting}>
+                  {submitting ? "Saving..." : "Save profile"}
                 </button>
               </div>
             </form>

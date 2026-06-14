@@ -2,6 +2,7 @@ import prisma from "../utils/prisma";
 import { sendNotification } from "../socket/socketConnect";
 import { processDueWebhookEvents, sendWebhookEvent } from "./webhookWorker";
 import { randomBytes } from "crypto";
+import { formatMoney, sendTransactionEmail } from "../utils/emailNotifications";
 
 function addBillingPeriod(start: Date, interval: "MONTHLY" | "YEARLY") {
   const end = new Date(start);
@@ -32,8 +33,16 @@ export async function runBillingCycle() {
   // Find active subscriptions that have nextBillingAt <= now
   const dueSubscriptions = await prisma.subscription.findMany({
     where: {
-      status: { in: ["ACTIVE", "CHANGE_PENDING"] },
-      nextBillingAt: { lte: now },
+      OR: [
+        {
+          status: { in: ["ACTIVE", "CHANGE_PENDING"] },
+          nextBillingAt: { lte: now },
+        },
+        {
+          status: "PAST_DUE",
+          nextBillingRetryAt: { lte: now },
+        },
+      ],
     },
     include: {
       product: true,
@@ -74,6 +83,9 @@ export async function runBillingCycle() {
             currentPeriodEnd: nextPeriodEnd,
             nextBillingAt: nextPeriodEnd,
             status: "ACTIVE", // ensure it stays active after successful payment
+            billingRetryCount: 0,
+            lastBillingFailureAt: null,
+            nextBillingRetryAt: null,
           },
         });
 
@@ -116,6 +128,18 @@ export async function runBillingCycle() {
           },
         });
         sendNotification(sub.buyerId, notification);
+        await sendTransactionEmail({
+          to: sub.buyer.email,
+          subject: "Your AppStack subscription renewed",
+          title: "Subscription renewed",
+          message: `Your ${sub.product.name} subscription renewed successfully.`,
+          details: {
+            Product: sub.product.name,
+            Plan: sub.plan.name,
+            Amount: formatMoney(amountCents, sub.plan.currency),
+            Invoice: invoice.number,
+          },
+        });
 
         // Fire payment.succeeded webhook
         await sendWebhookEvent(sub.productId, "payment.succeeded", {
@@ -137,31 +161,113 @@ export async function runBillingCycle() {
 
 async function handleBillingFailure(sub: any, reason: string) {
   const amountCents = sub.plan.priceCents * sub.seats;
+  const retryCount = (sub.billingRetryCount ?? 0) + 1;
+  const maxRetries = 3;
+  const now = new Date();
 
-  // Set subscription to CANCEL_PENDING or payment failed status
+  if (retryCount < maxRetries) {
+    const nextRetry = new Date(now);
+    nextRetry.setDate(nextRetry.getDate() + 1);
+
+    await prisma.subscription.update({
+      where: { id: sub.id },
+      data: {
+        status: "PAST_DUE",
+        billingRetryCount: retryCount,
+        lastBillingFailureAt: now,
+        nextBillingRetryAt: nextRetry,
+        integrationStatusMessage: `Payment failed. Retry ${retryCount} of ${maxRetries} is scheduled.`,
+      },
+    });
+
+    const notification = await prisma.notification.create({
+      data: {
+        userId: sub.buyerId,
+        title: "Subscription Renewal Payment Failed",
+        message: `We were unable to renew your subscription for ${sub.product.name}. Reason: ${reason}. We will retry payment.`,
+        type: "PAYMENT_STATUS",
+        priority: "HIGH",
+      },
+    });
+    sendNotification(sub.buyerId, notification);
+
+    await sendTransactionEmail({
+      to: sub.buyer.email,
+      subject: "AppStack payment retry scheduled",
+      title: "Subscription payment failed",
+      message: `We could not renew your ${sub.product.name} subscription. AppStack will retry payment automatically.`,
+      details: {
+        Product: sub.product.name,
+        Plan: sub.plan.name,
+        Amount: formatMoney(amountCents, sub.plan.currency),
+        Retry: `${retryCount} of ${maxRetries}`,
+        Reason: reason,
+      },
+    });
+
+    await sendWebhookEvent(sub.productId, "payment.failed", {
+      subscriptionId: sub.id,
+      amountCents,
+      buyerEmail: sub.recipientEmail,
+      reason,
+      retryCount,
+      finalAttempt: false,
+    });
+
+    return;
+  }
+
   await prisma.subscription.update({
     where: { id: sub.id },
     data: {
-      status: "CANCEL_PENDING",
+      status: "CANCELED",
+      canceledAt: now,
+      billingRetryCount: retryCount,
+      lastBillingFailureAt: now,
+      nextBillingRetryAt: null,
+      integrationStatusMessage: `Payment failed after ${maxRetries} attempts. Subscription was canceled.`,
     },
   });
 
   const notification = await prisma.notification.create({
     data: {
       userId: sub.buyerId,
-      title: "Subscription Renewal Payment Failed",
-      message: `We were unable to renew your subscription for ${sub.product.name}. Reason: ${reason}.`,
+      title: "Subscription Canceled After Payment Failures",
+      message: `We were unable to renew your subscription for ${sub.product.name} after ${maxRetries} attempts. Reason: ${reason}.`,
       type: "PAYMENT_STATUS",
       priority: "HIGH",
     },
   });
   sendNotification(sub.buyerId, notification);
 
+  await sendTransactionEmail({
+    to: sub.buyer.email,
+    subject: "AppStack subscription canceled after payment failures",
+    title: "Subscription canceled",
+    message: `Your ${sub.product.name} subscription was canceled after repeated payment failures.`,
+    details: {
+      Product: sub.product.name,
+      Plan: sub.plan.name,
+      Amount: formatMoney(amountCents, sub.plan.currency),
+      Attempts: retryCount,
+      Reason: reason,
+    },
+  });
+
   await sendWebhookEvent(sub.productId, "payment.failed", {
     subscriptionId: sub.id,
     amountCents,
     buyerEmail: sub.recipientEmail,
     reason,
+    retryCount,
+    finalAttempt: true,
+  });
+
+  await sendWebhookEvent(sub.productId, "subscription.canceled", {
+    subscriptionId: sub.id,
+    buyerEmail: sub.recipientEmail,
+    planIdentifier: sub.plan.identifier,
+    reason: "payment_failed",
   });
 }
 

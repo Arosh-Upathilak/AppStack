@@ -10,6 +10,7 @@ import {
 } from "../controllers/sellerController";
 import {
   createSellerProduct,
+  createProductChangeRequest,
   listSellerProducts,
   submitSellerProduct,
   updateSellerProduct,
@@ -26,6 +27,7 @@ sellerRouter.get("/products", authMiddleware, authMiddlewareRequireRole("SELLER"
 sellerRouter.post("/products", authMiddleware, authMiddlewareRequireRole("SELLER"), createSellerProduct);
 sellerRouter.put("/products/:productId", authMiddleware, authMiddlewareRequireRole("SELLER"), updateSellerProduct);
 sellerRouter.post("/products/:productId/submit", authMiddleware, authMiddlewareRequireRole("SELLER"), submitSellerProduct);
+sellerRouter.post("/products/:productId/change-requests", authMiddleware, authMiddlewareRequireRole("SELLER"), createProductChangeRequest);
 sellerRouter.get("/subscriptions", authMiddleware, authMiddlewareRequireRole("SELLER"), getSellerSubscriptionSummary);
 
 // Earnings & Payouts

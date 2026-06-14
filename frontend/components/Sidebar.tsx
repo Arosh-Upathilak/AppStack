@@ -36,6 +36,7 @@ const adminNav: NavItem[] = [
   { href: "/admin/cancellations", label: "Pending Cancellations", icon: "trash" },
   { href: "/admin/refunds", label: "Pending Refunds", icon: "refresh" },
   { href: "/admin/payouts", label: "Payout Requests", icon: "wallet" },
+  { href: "/admin/webhooks", label: "Webhook Events", icon: "link" },
   { href: "/admin/users", label: "Users", icon: "users" },
 ];
 
@@ -80,16 +81,47 @@ function SellerCta({ context }: { context: "buyer" | "seller" | "admin" }) {
 
   // context === 'buyer'
   if (!isSeller) {
+    let label = "Become a Seller";
+    let color = "var(--brand)";
+    let badgeText = "";
+    let badgeColor = "";
+
+    if (sellerStatus === "PENDING") {
+      label = "Seller App Pending";
+      color = "var(--warning, #b45309)";
+      badgeText = "Pending";
+      badgeColor = "var(--warning, #b45309)";
+    } else if (sellerStatus === "REJECTED") {
+      label = "Seller App Rejected";
+      color = "var(--danger, #dc2626)";
+      badgeText = "Rejected";
+      badgeColor = "var(--danger, #dc2626)";
+    }
+
     return (
       <>
         <div className="sb-section">Sell on AppStack</div>
         <Link
           href="/buyer/become-seller"
           className="sb-link"
-          style={{ color: "var(--brand)", fontWeight: 500 }}
+          style={{ color, fontWeight: 500 }}
         >
           <Icon name="package" size={14} />
-          <span>Become a Seller</span>
+          <span>{label}</span>
+          {badgeText && (
+            <span
+              style={{
+                marginLeft: "auto",
+                fontSize: 10,
+                fontWeight: 600,
+                textTransform: "uppercase",
+                letterSpacing: 0.4,
+                color: badgeColor,
+              }}
+            >
+              {badgeText}
+            </span>
+          )}
         </Link>
       </>
     );

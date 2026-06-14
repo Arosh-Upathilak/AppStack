@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { asyncHandler, AppError } from "../utils/errorHandler";
 import prisma from "../utils/prisma";
 import { sendNotification } from "../socket/socketConnect";
+import { formatMoney, sendTransactionEmail } from "../utils/emailNotifications";
 
 export const requestRefund = asyncHandler(
   async (req: Request, res: Response) => {
@@ -122,6 +123,7 @@ export const decideRefund = asyncHandler(
             product: true,
           },
         },
+        buyer: true,
       },
     });
 
@@ -180,6 +182,17 @@ export const decideRefund = asyncHandler(
         },
       });
       sendNotification(refund.buyerId, buyerNotification);
+      await sendTransactionEmail({
+        to: refund.buyer.email,
+        subject: "Your AppStack refund was approved",
+        title: "Refund approved",
+        message: `Your refund request for ${refund.invoice.product.name} was approved.`,
+        details: {
+          Product: refund.invoice.product.name,
+          Invoice: refund.invoice.number,
+          Amount: formatMoney(refund.amountCents, refund.invoice.currency),
+        },
+      });
 
       // Notify seller
       const sellerNotification = await prisma.notification.create({

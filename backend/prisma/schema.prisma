@@ -26,6 +26,8 @@ model User {
   approvedSellers Seller[]
   sellerApplications Seller[] @relation("SellerUser")
   products Product[] @relation("SellerProducts")
+  productChangeRequests ProductChangeRequest[] @relation("SellerProductChangeRequests")
+  reviewedProductChangeRequests ProductChangeRequest[] @relation("ProductChangeReviewedBy")
   reviewedProducts Product[] @relation("ProductReviewedBy")
   subscriptions Subscription[] @relation("BuyerSubscriptions")
   invoices Invoice[] @relation("BuyerInvoices")
@@ -90,6 +92,7 @@ model Product {
   consents         Consent[]
   webhookSecret    String?
   webhookEvents    WebhookEvent[]
+  changeRequests   ProductChangeRequest[]
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
 
@@ -135,6 +138,7 @@ model Review {
 
   @@index([productId])
   @@index([userId])
+  @@unique([productId, userId])
 }
 
 model Subscription {
@@ -156,6 +160,9 @@ model Subscription {
   canceledAt         DateTime?
   pendingPlanId      String?
   adminCancellationApprovedAt DateTime?
+  billingRetryCount  Int                @default(0)
+  lastBillingFailureAt DateTime?
+  nextBillingRetryAt DateTime?
   integrationStatusMessage String?          @db.Text
   invoices           Invoice[]
   consents           Consent[]
@@ -168,6 +175,7 @@ model Subscription {
   @@index([planId])
   @@index([status])
   @@index([nextBillingAt])
+  @@index([nextBillingRetryAt])
   @@index([adminCancellationApprovedAt])
 }
 
@@ -299,6 +307,40 @@ enum ProductStatus {
   PENDING_DELETION
 }
 
+model ProductChangeRequest {
+  id              String              @id @default(uuid())
+  productId       String
+  product         Product             @relation(fields: [productId], references: [id], onDelete: Cascade)
+  sellerId        String
+  seller          User                @relation("SellerProductChangeRequests", fields: [sellerId], references: [id], onDelete: Cascade)
+  type            ProductChangeType
+  status          ProductChangeStatus @default(PENDING)
+  payload         Json?
+  rejectionReason String?
+  submittedAt     DateTime            @default(now())
+  reviewedAt      DateTime?
+  reviewedById    String?
+  reviewedBy      User?               @relation("ProductChangeReviewedBy", fields: [reviewedById], references: [id])
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  @@index([productId])
+  @@index([sellerId])
+  @@index([status])
+  @@index([type])
+}
+
+enum ProductChangeType {
+  UPDATE
+  DELETE
+}
+
+enum ProductChangeStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 enum BillingInterval {
   MONTHLY
   YEARLY
@@ -309,6 +351,7 @@ enum SubscriptionStatus {
   ACTIVE
   CHANGE_PENDING
   CANCEL_PENDING
+  PAST_DUE
   CANCELED
 }
 
