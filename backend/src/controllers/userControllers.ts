@@ -714,6 +714,89 @@ const deleteUserGDPR = asyncHandler(async (req: Request, res: Response) => {
   });
 });
 
+const createUserByAdmin = asyncHandler(async (req: Request, res: Response) => {
+  const { email, name, roles } = req.body as {
+    email: string;
+    name: string;
+    roles: ("BUYER" | "SELLER" | "ADMIN")[];
+  };
+
+  if (!email || !name || !roles || !Array.isArray(roles) || roles.length === 0) {
+    throw new AppError("Email, name, and roles are required", 400);
+  }
+
+  if (!emailRegex.test(email)) {
+    throw new AppError("Invalid email", 400);
+  }
+
+  // Check if user already exists
+  const existsUser = await prisma.user.findUnique({
+    where: { email },
+  });
+
+  if (existsUser) {
+    throw new AppError("User with this email already exists", 400);
+  }
+
+  // Split name into firstName and lastName
+  const nameParts = name.trim().split(/\s+/);
+  const firstName = nameParts[0] || "";
+  const lastName = nameParts.slice(1).join(" ") || null;
+
+  // Create user as verified and with password as null
+  const user = await prisma.user.create({
+    data: {
+      email,
+      firstName,
+      lastName,
+      isVerified: true,
+      roles: { set: roles },
+      password: null,
+    },
+  });
+
+  // Generate Reset Token Password reusing reset path
+  const resetToken = crypto.randomUUID();
+  await redisClient.setEx(`reset:${resetToken}`, OTP_EXPIRY, email);
+  const frontendUrl = process.env.FRONTEND_URL || "http://localhost:3000";
+  const resetLink = `${frontendUrl}/reset-password/${resetToken}`;
+
+  // Send email
+  try {
+    await transporter.sendMail({
+      from: process.env.EMAIL_USER,
+      to: email,
+      subject: "Welcome to AppStack - Set Your Password",
+      html: `
+        <div style="font-family: sans-serif; padding: 20px; line-height: 1.5;">
+          <h2>Welcome to AppStack, ${firstName}!</h2>
+          <p>An administrator has created an account for you with the following role(s): <strong>${roles.join(", ")}</strong>.</p>
+          <p>Please click the button below to set your password and get started:</p>
+          <div style="margin: 24px 0;">
+            <a href="${resetLink}" style="background-color: #003d9b; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Set Your Password</a>
+          </div>
+          <p style="font-size: 12px; color: #666;">If the button doesn't work, copy and paste this link into your browser:</p>
+          <p style="font-size: 12px; color: #666; word-break: break-all;">${resetLink}</p>
+        </div>
+      `,
+    });
+  } catch (error) {
+    console.error("Failed to send set-password email to created user:", error);
+    // We don't rollback the user creation since they are created, but we notify of the failure
+    return res.status(201).json({
+      success: true,
+      message: "User created successfully, but failed to send invitation email.",
+      user,
+    });
+  }
+
+  return res.status(201).json({
+    success: true,
+    message: "User created successfully and invitation email sent.",
+    user,
+  });
+});
+
 export {
   createUser,
   getCurrentUser,
@@ -728,4 +811,5 @@ export {
   sendAdminPasswordReset,
   updateUserRole,
   deleteUserGDPR,
+  createUserByAdmin,
 };

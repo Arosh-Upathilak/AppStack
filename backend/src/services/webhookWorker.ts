@@ -9,12 +9,17 @@ type SendWebhookOptions = {
   deliverImmediately?: boolean;
 };
 
-const MAX_ATTEMPTS = 5;
+const MAX_ATTEMPTS = 10;
 const RETRY_DELAYS_MS = [
-  60 * 1000,
-  5 * 60 * 1000,
-  15 * 60 * 1000,
-  60 * 60 * 1000,
+  60 * 1000,          // 1m
+  5 * 60 * 1000,      // 5m
+  15 * 60 * 1000,     // 15m
+  60 * 60 * 1000,     // 1h
+  2 * 60 * 60 * 1000, // 2h
+  4 * 60 * 60 * 1000, // 4h
+  8 * 60 * 60 * 1000, // 8h
+  12 * 60 * 60 * 1000,// 12h
+  24 * 60 * 60 * 1000,// 24h
 ];
 
 export function generateWebhookSignature(payload: string, secret: string): string {

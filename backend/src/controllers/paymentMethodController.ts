@@ -1,38 +1,7 @@
-import crypto from "crypto";
 import { Request, Response } from "express";
 import { AppError, asyncHandler } from "../utils/errorHandler";
 import prisma from "../utils/prisma";
-
-function normalizeCardNumber(number: string) {
-  return String(number ?? "").replace(/\D/g, "");
-}
-
-function passesLuhn(number: string) {
-  let sum = 0;
-  let doubleDigit = false;
-
-  for (let index = number.length - 1; index >= 0; index -= 1) {
-    let digit = Number(number[index]);
-    if (doubleDigit) {
-      digit *= 2;
-      if (digit > 9) digit -= 9;
-    }
-    sum += digit;
-    doubleDigit = !doubleDigit;
-  }
-
-  return sum % 10 === 0;
-}
-
-function detectBrand(number: string) {
-  if (number.startsWith("4")) return "Visa";
-  if (/^5[1-5]/.test(number) || /^2(2[2-9]|[3-6]|7[01]|720)/.test(number)) {
-    return "Mastercard";
-  }
-  if (/^3[47]/.test(number)) return "Amex";
-  if (/^6(?:011|5)/.test(number)) return "Discover";
-  return "Card";
-}
+import { getPaymentProvider } from "../services/payments";
 
 function serializeMethod(method: any) {
   return {
@@ -73,13 +42,8 @@ export const createPaymentMethod = asyncHandler(
       setAsPrimary?: boolean;
     };
 
-    const normalizedNumber = normalizeCardNumber(number ?? "");
-    if (normalizedNumber.length < 12 || normalizedNumber.length > 19) {
-      throw new AppError("Card number must be 12 to 19 digits", 400);
-    }
-
-    if (!passesLuhn(normalizedNumber)) {
-      throw new AppError("Card number failed simulator validation", 400);
+    if (!number) {
+      throw new AppError("Card number is required", 400);
     }
 
     const month = Number(expMonth);
@@ -100,6 +64,18 @@ export const createPaymentMethod = asyncHandler(
       throw new AppError("Card is expired", 400);
     }
 
+    const provider = getPaymentProvider();
+    let tokenizedCard;
+    try {
+      tokenizedCard = await provider.tokenizeCard({
+        number,
+        expMonth: month,
+        expYear: year,
+      });
+    } catch (err: any) {
+      throw new AppError(err.message, 400);
+    }
+
     const existingCount = await prisma.paymentMethod.count({
       where: { userId },
     });
@@ -117,12 +93,13 @@ export const createPaymentMethod = asyncHandler(
       return tx.paymentMethod.create({
         data: {
           userId,
-          brand: detectBrand(normalizedNumber),
-          last4: normalizedNumber.slice(-4),
-          expMonth: month,
-          expYear: year,
+          brand: tokenizedCard.brand,
+          last4: tokenizedCard.last4,
+          expMonth: tokenizedCard.expMonth,
+          expYear: tokenizedCard.expYear,
           isPrimary: makePrimary,
-          simulatorToken: crypto.randomUUID(),
+          simulatorToken: tokenizedCard.token,
+          providerToken: tokenizedCard.token,
         },
       });
     });

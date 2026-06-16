@@ -307,3 +307,40 @@ export async function decideProductChangeRequest(
   );
   return response.data;
 }
+
+export interface PlatformSettings {
+  SALES_FUND_LOCK_DAYS: number;
+  BILLING_MAX_RETRIES: number;
+  BILLING_RETRY_DELAY_DAYS: number;
+  PAYOUT_MIN_CENTS: number;
+  REFUND_WINDOW_DAYS: number;
+}
+
+export const getSettings = async (): Promise<PlatformSettings> => {
+  const headers = await userAuthorization();
+  const response = await axios.get<{ success: boolean; settings: PlatformSettings }>(
+    `${API_BASE}/admin/settings`,
+    { headers, withCredentials: true }
+  );
+  return response.data.settings;
+};
+
+export const updateSettings = async (settings: Partial<PlatformSettings>): Promise<{ success: boolean; message: string; settings: PlatformSettings }> => {
+  const headers = await userAuthorization();
+  const response = await axios.patch<{ success: boolean; message: string; settings: PlatformSettings }>(
+    `${API_BASE}/admin/settings`,
+    settings,
+    { headers, withCredentials: true }
+  );
+  return response.data;
+};
+
+export const createUserByAdmin = async (input: { email: string; name: string; roles: string[] }): Promise<{ success: boolean; message: string; user: UserAdmin }> => {
+  const headers = await userAuthorization();
+  const response = await axios.post<{ success: boolean; message: string; user: UserAdmin }>(
+    `${API_BASE}/admin/users`,
+    input,
+    { headers, withCredentials: true }
+  );
+  return response.data;
+};

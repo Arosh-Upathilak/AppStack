@@ -3,6 +3,7 @@ import { asyncHandler, AppError } from "../utils/errorHandler";
 import prisma from "../utils/prisma";
 import { sendNotification } from "../socket/socketConnect";
 import { formatMoney, sendTransactionEmail } from "../utils/emailNotifications";
+import { getPlatformSetting } from "../config/platformSettings";
 
 export const requestRefund = asyncHandler(
   async (req: Request, res: Response) => {
@@ -31,11 +32,32 @@ export const requestRefund = asyncHandler(
       throw new AppError("Only PAID invoices can be refunded", 400);
     }
 
-    // Check 30-day limit
+    // Enforce refundsEnabled
+    const product = await prisma.product.findUnique({
+      where: { id: invoice.productId },
+      include: {
+        plans: {
+          where: { id: invoice.planId },
+        },
+      },
+    });
+
+    if (!product) {
+      throw new AppError("Product not found", 404);
+    }
+
+    const plan = product.plans[0];
+    const refundsEnabled = plan ? plan.refundsEnabled : product.refundsEnabled;
+    if (!refundsEnabled) {
+      throw new AppError(plan ? "Refunds are disabled for this plan" : "Refunds are disabled for this product", 400);
+    }
+
+    // Check refund window limit from config
+    const refundWindowDays = await getPlatformSetting("REFUND_WINDOW_DAYS");
+    const refundWindowMs = refundWindowDays * 24 * 60 * 60 * 1000;
     const invoiceAgeMs = Date.now() - new Date(invoice.createdAt).getTime();
-    const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
-    if (invoiceAgeMs > thirtyDaysMs) {
-      throw new AppError("Refunds can only be requested within 30 days of payment", 400);
+    if (invoiceAgeMs > refundWindowMs) {
+      throw new AppError(`Refunds can only be requested within ${refundWindowDays} days of payment`, 400);
     }
 
     // Check if a request already exists

@@ -49,6 +49,15 @@ export function useRoleRedirect() {
       return;
     }
 
+    if (typeof window !== "undefined") {
+      const registerAsSeller = sessionStorage.getItem("registerAsSeller");
+      if (registerAsSeller === "true") {
+        sessionStorage.removeItem("registerAsSeller");
+        router.replace("/buyer/become-seller");
+        return;
+      }
+    }
+
     router.replace("/");
   }, [status, session, router, searchParams]);
 }

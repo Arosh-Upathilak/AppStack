@@ -1,4 +1,5 @@
 import { AppError, asyncHandler } from "../utils/errorHandler";
+import { getPlatformSetting } from "../config/platformSettings";
 import { Request, Response } from "express";
 import prisma from "../utils/prisma";
 import { sendNotification } from "../socket/socketConnect";
@@ -373,9 +374,10 @@ const requestPayout = asyncHandler(async (req: Request, res: Response) => {
     throw new AppError("A valid positive amountCents is required", 400);
   }
 
-  // Enforce minimum limit ($10.00 / 1000 cents)
-  if (amountCents < 1000) {
-    throw new AppError("Minimum payout amount is $10.00 (1000 cents)", 400);
+  // Enforce minimum limit
+  const minPayoutCents = await getPlatformSetting("PAYOUT_MIN_CENTS");
+  if (amountCents < minPayoutCents) {
+    throw new AppError(`Minimum payout amount is $${(minPayoutCents / 100).toFixed(2)} (${minPayoutCents} cents)`, 400);
   }
 
   // Calculate withdrawable balance
@@ -524,41 +526,26 @@ const decidePayout = asyncHandler(async (req: Request, res: Response) => {
   const businessName = payout.seller.sellerApplications[0]?.businessName || "your business";
 
   if (decision === "APPROVE") {
-    await prisma.$transaction(async (tx) => {
-      // Update PayoutRequest
-      await tx.payoutRequest.update({
-        where: { id: payoutId },
-        data: { status: "COMPLETED" },
-      });
-
-      // Create negative Transaction of type PAYOUT, status WITHDRAWN
-      await tx.transaction.create({
-        data: {
-          sellerId: payout.sellerId,
-          amountCents: -payout.amountCents, // Payout is negative
-          type: "PAYOUT",
-          status: "WITHDRAWN",
-          description: `Payout: Sent to ${payout.payoutEmail}`,
-          payoutId: payout.id,
-        },
-      });
+    await prisma.payoutRequest.update({
+      where: { id: payoutId },
+      data: { status: "APPROVED" },
     });
 
-    // Notify seller
+    // Notify seller of approval
     const sellerNotification = await prisma.notification.create({
       data: {
         userId: payout.sellerId,
-        title: "Payout Completed",
-        message: `Your payout request of $${(payout.amountCents / 100).toFixed(2)} for ${businessName} has been processed and sent.`,
+        title: "Payout Request Approved",
+        message: `Your payout request of $${(payout.amountCents / 100).toFixed(2)} for ${businessName} was approved and is queued for processing.`,
         type: "PAYMENT_STATUS",
-        priority: "HIGH",
+        priority: "NORMAL",
       },
     });
     sendNotification(payout.sellerId, sellerNotification);
 
     return res.status(200).json({
       success: true,
-      message: "Payout approved and completed successfully.",
+      message: "Payout request approved successfully.",
     });
   } else {
     // Reject
@@ -616,6 +603,7 @@ const getSellerSubscriptionSummary = asyncHandler(
         name: true,
         slug: true,
         status: true,
+        viewCount: true,
         plans: {
           select: {
             id: true,
@@ -729,11 +717,14 @@ const getSellerSubscriptionSummary = asyncHandler(
         name: product.name,
         slug: product.slug,
         status: product.status,
+        viewCount: product.viewCount,
         activeCount,
         canceledCount,
         monthlyRevenueCents,
       };
     });
+
+    const totalViews = sellerProducts.reduce((sum, p) => sum + (p.viewCount ?? 0), 0);
 
     return res.status(200).json({
       success: true,
@@ -743,6 +734,7 @@ const getSellerSubscriptionSummary = asyncHandler(
         activeSubscriptions: activeSubscriptions.length,
         canceledSubscriptions: canceledSubscriptions.length,
         monthlyRecurringRevenueCents,
+        totalViews,
       },
       products: productSummaries,
       subscriptions,

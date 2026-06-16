@@ -14,12 +14,12 @@ import { getRecaptchaToken } from "@/lib/recaptcha";
 import { retryOnTransient } from "@/lib/retry";
 import { getErrorMessage } from "@/lib/api/errors";
 
-type Step = "details" | "otp";
+type Step = "type" | "details" | "otp";
 
 export default function RegisterPage() {
   const router = useRouter();
 
-  const [step, setStep] = useState<Step>("details");
+  const [step, setStep] = useState<Step>("type");
   const [formData, setFormData] = useState<SignUpProps>({
     firstName: "",
     lastName: "",
@@ -32,6 +32,13 @@ export default function RegisterPage() {
   const [verifyToken, setVerifyToken] = useState<string | null>(null);
   const [timer, setTimer] = useState(60);
   const [resendOtpSending, setResendOtpSending] = useState(false);
+  const [isRegisteringAsSeller, setIsRegisteringAsSeller] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setIsRegisteringAsSeller(sessionStorage.getItem("registerAsSeller") === "true");
+    }
+  }, [step]);
 
   // If the user is already authenticated, send them to their dashboard.
   useRoleRedirect();
@@ -131,6 +138,14 @@ export default function RegisterPage() {
         });
         setError("");
         toast.success("Account created successfully");
+        if (isRegisteringAsSeller) {
+          if (typeof window !== "undefined") {
+            sessionStorage.removeItem("registerAsSeller");
+          }
+          router.replace("/buyer/become-seller");
+        } else {
+          router.replace("/buyer");
+        }
       }
     } catch (error) {
       const message = getErrorMessage(error, "OTP verification failed");
@@ -193,12 +208,109 @@ export default function RegisterPage() {
 
         <Steps current={step} />
 
+        {step === "type" && (
+          <>
+            <h1 className="pub-auth-title" style={{ textAlign: "center" }}>Choose account type</h1>
+            <p className="pub-auth-sub" style={{ textAlign: "center", marginBottom: 24 }}>
+              Are you registering to browse products or to sell your own software?
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              <button
+                type="button"
+                onClick={() => {
+                  if (typeof window !== "undefined") {
+                    sessionStorage.removeItem("registerAsSeller");
+                  }
+                  setStep("details");
+                }}
+                className="card card-pad"
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "flex-start",
+                  textAlign: "left",
+                  gap: 8,
+                  cursor: "pointer",
+                  width: "100%",
+                  border: "1px solid var(--line)",
+                  background: "var(--surface)",
+                  transition: "all 0.2s",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.borderColor = "var(--brand)";
+                  e.currentTarget.style.boxShadow = "var(--shadow-sm)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.borderColor = "var(--line)";
+                  e.currentTarget.style.boxShadow = "none";
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 32, height: 32, borderRadius: "50%", background: "var(--brand-soft)", color: "var(--brand)" }}>
+                    <Icon name="compass" size={16} />
+                  </div>
+                  <strong style={{ fontSize: 15, color: "var(--ink-1)" }}>Register as Buyer</strong>
+                </div>
+                <p style={{ margin: 0, fontSize: 13, color: "var(--ink-3)" }}>
+                  I want to browse the catalogue, make purchases, and manage my active subscriptions.
+                </p>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  if (typeof window !== "undefined") {
+                    sessionStorage.setItem("registerAsSeller", "true");
+                  }
+                  setStep("details");
+                }}
+                className="card card-pad"
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "flex-start",
+                  textAlign: "left",
+                  gap: 8,
+                  cursor: "pointer",
+                  width: "100%",
+                  border: "1px solid var(--line)",
+                  background: "var(--surface)",
+                  transition: "all 0.2s",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.borderColor = "var(--brand)";
+                  e.currentTarget.style.boxShadow = "var(--shadow-sm)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.borderColor = "var(--line)";
+                  e.currentTarget.style.boxShadow = "none";
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 32, height: 32, borderRadius: "50%", background: "var(--success-soft)", color: "var(--success)" }}>
+                    <Icon name="store" size={16} />
+                  </div>
+                  <strong style={{ fontSize: 15, color: "var(--ink-1)" }}>Register as Seller</strong>
+                </div>
+                <p style={{ margin: 0, fontSize: 13, color: "var(--ink-3)" }}>
+                  I want to list my products, define billing plans, track earnings, and manage buyers.
+                </p>
+              </button>
+            </div>
+            
+            <p className="pub-auth-switch" style={{ marginTop: 24 }}>
+              Already have an account? <Link href="/login">Log in</Link>
+            </p>
+          </>
+        )}
+
         {step === "details" && (
           <>
             <h1 className="pub-auth-title">Create your account</h1>
             <p className="pub-auth-sub">
-              Start as a buyer — you can apply to sell from your dashboard once
-              you&apos;re signed in.
+              {isRegisteringAsSeller
+                ? "Enter your details to create your base account. You will be redirected to apply as a seller next."
+                : "Start as a buyer — you can apply to sell from your dashboard once you're signed in."}
             </p>
             <form className="pub-auth-form" onSubmit={handleSignUp}>
               <div
@@ -386,7 +498,7 @@ export default function RegisterPage() {
 }
 
 function Steps({ current }: { current: Step }) {
-  const order: Step[] = ["details", "otp"];
+  const order: Step[] = ["type", "details", "otp"];
   const idx = order.indexOf(current);
   return (
     <div

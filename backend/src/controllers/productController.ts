@@ -1,10 +1,12 @@
 import { Request, Response } from "express";
+import { redisClient } from "../config/redis";
 import { BillingInterval, Prisma, ProductStatus } from "@prisma/client";
 import { AppError, asyncHandler } from "../utils/errorHandler";
 import prisma from "../utils/prisma";
 import { sendNotification } from "../socket/socketConnect";
 import { sendWebhookEvent } from "../services/webhookWorker";
 import { formatMoney, sendTransactionEmail } from "../utils/emailNotifications";
+import { verifyRecaptcha } from "../utils/recaptcha";
 
 type PlanInput = {
   identifier?: string;
@@ -14,6 +16,7 @@ type PlanInput = {
   currency?: string;
   billingInterval?: BillingInterval;
   isActive?: boolean;
+  refundsEnabled?: boolean;
 };
 
 type ProductInput = {
@@ -25,6 +28,7 @@ type ProductInput = {
   hue?: string;
   webhookUrl?: string;
   webhookTested?: boolean;
+  refundsEnabled?: boolean;
   plans?: PlanInput[];
 };
 
@@ -119,6 +123,8 @@ function serializeProduct(product: any, options: { includeWebhookSecret?: boolea
     rejectionReason: product.rejectionReason,
     submittedAt: product.submittedAt,
     publishedAt: product.publishedAt,
+    refundsEnabled: product.refundsEnabled,
+    viewCount: product.viewCount,
     createdAt: product.createdAt,
     updatedAt: product.updatedAt,
     pendingChangeRequest: product.changeRequests?.[0]
@@ -138,6 +144,7 @@ function serializeProduct(product: any, options: { includeWebhookSecret?: boolea
       currency: plan.currency,
       billingInterval: plan.billingInterval,
       isActive: plan.isActive,
+      refundsEnabled: plan.refundsEnabled,
       createdAt: plan.createdAt,
       updatedAt: plan.updatedAt,
     })),
@@ -202,6 +209,7 @@ function normalizePlans(plans: PlanInput[] | undefined) {
       currency: plan.currency?.trim().toUpperCase() || "USD",
       billingInterval: plan.billingInterval ?? "MONTHLY",
       isActive: plan.isActive ?? true,
+      refundsEnabled: plan.refundsEnabled ?? true,
     };
   });
 }
@@ -246,6 +254,7 @@ async function notifyAdmins(title: string, message: string) {
 
 function productPayloadFromInput(input: ProductInput, existingProduct: any) {
   const nextName = input.name?.trim() || existingProduct.name;
+  const refundsEnabled = input.refundsEnabled === undefined ? existingProduct.refundsEnabled : input.refundsEnabled;
   const plans = input.plans
     ? normalizePlans(input.plans)
     : existingProduct.plans.map((plan: any) => ({
@@ -256,6 +265,7 @@ function productPayloadFromInput(input: ProductInput, existingProduct: any) {
         currency: plan.currency,
         billingInterval: plan.billingInterval,
         isActive: plan.isActive,
+        refundsEnabled: plan.refundsEnabled,
       }));
 
   if (plans.length === 0) {
@@ -274,6 +284,7 @@ function productPayloadFromInput(input: ProductInput, existingProduct: any) {
         ? existingProduct.webhookUrl
         : input.webhookUrl.trim() || null,
     webhookTested: input.webhookTested ?? existingProduct.webhookTested,
+    refundsEnabled,
     plans,
   };
 }
@@ -322,6 +333,7 @@ async function applyApprovedProductUpdate(tx: any, product: any, payload: any, a
       hue: payload.hue ?? product.hue,
       webhookUrl: payload.webhookUrl,
       webhookTested: payload.webhookTested ?? product.webhookTested,
+      refundsEnabled: payload.refundsEnabled,
       status: "APPROVED",
       rejectionReason: null,
       reviewedAt: new Date(),
@@ -374,6 +386,22 @@ export const getProduct = asyncHandler(async (req: Request, res: Response) => {
 
   if (!product) {
     throw new AppError("Product not found", 404);
+  }
+
+  // Deduplicate view count tracking per IP within 1 hour
+  try {
+    const clientIp = String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "unknown");
+    const viewKey = `view:${product.id}:${clientIp}`;
+    const alreadyViewed = await redisClient.get(viewKey);
+    if (!alreadyViewed) {
+      await prisma.product.update({
+        where: { id: product.id },
+        data: { viewCount: { increment: 1 } },
+      });
+      await redisClient.setEx(viewKey, 3600, "1");
+    }
+  } catch (err) {
+    console.error("[ProductViewTracking] Failed to increment viewCount:", err);
   }
 
   return res.status(200).json({
@@ -475,6 +503,7 @@ export const createSellerProduct = asyncHandler(
         hue: input.hue ?? "#003d9b",
         webhookUrl: input.webhookUrl?.trim() || null,
         webhookTested: input.webhookTested ?? false,
+        refundsEnabled: input.refundsEnabled ?? true,
         plans: {
           create: plans,
         },
@@ -545,6 +574,7 @@ export const updateSellerProduct = asyncHandler(
               ? existingProduct.webhookUrl
               : input.webhookUrl.trim() || null,
           webhookTested: input.webhookTested ?? existingProduct.webhookTested,
+          refundsEnabled: input.refundsEnabled === undefined ? existingProduct.refundsEnabled : input.refundsEnabled,
           status: ProductStatus.DRAFT,
           rejectionReason: null,
           submittedAt: null,
@@ -1114,7 +1144,9 @@ export const createProductReview = asyncHandler(
   async (req: Request, res: Response) => {
     const productId = String(req.params.productId);
     const userId = (req as any).user.id;
-    const { rating, body } = req.body as { rating: number; body: string };
+    const { rating, body, token } = req.body as { rating: number; body: string; token?: string };
+
+    await verifyRecaptcha(token, "submit_review");
 
     if (!rating || !Number.isInteger(rating) || rating < 1 || rating > 5) {
       throw new AppError("A rating between 1 and 5 is required", 400);

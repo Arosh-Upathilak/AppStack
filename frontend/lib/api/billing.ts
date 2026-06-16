@@ -82,7 +82,7 @@ export async function createSubscription(input: CreateSubscriptionInput) {
   return res.data;
 }
 
-export async function requestRecipientVerification(recipientEmail: string) {
+export async function requestRecipientVerification(recipientEmail: string, token?: string) {
   const headers = await userAuthorization();
   const res = await axios.post<{
     success: boolean;
@@ -91,7 +91,7 @@ export async function requestRecipientVerification(recipientEmail: string) {
     required: boolean;
   }>(
     `${API_BASE}/subscriptions/recipient-verifications`,
-    { recipientEmail },
+    { recipientEmail, token },
     {
       headers,
       withCredentials: true,

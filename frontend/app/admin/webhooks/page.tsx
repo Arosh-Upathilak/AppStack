@@ -131,7 +131,8 @@ export default function AdminWebhookEventsPage() {
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.15fr) minmax(320px, 0.85fr)", gap: 16 }}>
             <div className="card" style={{ overflow: "hidden" }}>
-              <table className="tbl">
+              <div className="table-container" style={{ overflowX: "auto" }}>
+                <table className="tbl">
                 <thead>
                   <tr>
                     <th style={{ paddingLeft: 20 }}>Product</th>
@@ -170,7 +171,8 @@ export default function AdminWebhookEventsPage() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+                </table>
+              </div>
             </div>
 
             <div className="card" style={{ padding: 14, overflow: "auto", maxHeight: 520 }}>

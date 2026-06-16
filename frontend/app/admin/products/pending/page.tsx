@@ -109,7 +109,8 @@ export default function AdminPendingProductsPage() {
             <div style={{ padding: 18, borderBottom: "1px solid var(--line-soft)" }}>
               <h2 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>New product submissions</h2>
             </div>
-            <table className="tbl">
+            <div className="table-container" style={{ overflowX: "auto" }}>
+              <table className="tbl">
             <thead>
               <tr>
                 <th style={{ paddingLeft: 20 }}>Product</th>
@@ -162,13 +163,15 @@ export default function AdminPendingProductsPage() {
             </tbody>
             </table>
           </div>
+        </div>
         )}
         {changeRequests.length > 0 && (
           <div className="card" style={{ overflow: "hidden" }}>
             <div style={{ padding: 18, borderBottom: "1px solid var(--line-soft)" }}>
               <h2 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>Product change requests</h2>
             </div>
-            <table className="tbl">
+            <div className="table-container" style={{ overflowX: "auto" }}>
+              <table className="tbl">
               <thead>
                 <tr>
                   <th style={{ paddingLeft: 20 }}>Product</th>
@@ -208,6 +211,7 @@ export default function AdminPendingProductsPage() {
               </tbody>
             </table>
           </div>
+        </div>
         )}
         </div>
       )}

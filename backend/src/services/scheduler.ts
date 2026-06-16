@@ -3,6 +3,8 @@ import { sendNotification } from "../socket/socketConnect";
 import { processDueWebhookEvents, sendWebhookEvent } from "./webhookWorker";
 import { randomBytes } from "crypto";
 import { formatMoney, sendTransactionEmail } from "../utils/emailNotifications";
+import { getPaymentProvider } from "./payments";
+import { getPlatformSetting } from "../config/platformSettings";
 
 function addBillingPeriod(start: Date, interval: "MONTHLY" | "YEARLY") {
   const end = new Date(start);
@@ -25,8 +27,14 @@ export async function runBillingCycle() {
 
   await processDueWebhookEvents();
   
-  // First, unlock transactions older than 30 days
+  // First, unlock transactions older than lock days
   await unlockTransactions();
+
+  // Process approved payouts
+  await processApprovedPayouts();
+
+  // Process approved refunds
+  await processApprovedRefunds();
 
   const now = new Date();
 
@@ -57,21 +65,57 @@ export async function runBillingCycle() {
 
   console.log(`[Scheduler] Found ${dueSubscriptions.length} subscriptions due for billing`);
 
+  const provider = getPaymentProvider();
+
   for (const sub of dueSubscriptions) {
     try {
       const amountCents = sub.plan.priceCents * sub.seats;
-      const paymentMethod = sub.buyer.paymentMethods.find(m => m.isPrimary) || sub.buyer.paymentMethods[0];
+      
+      // Multi-card retry: gather all cards, prioritize primary
+      const paymentMethodsToTry = [...sub.buyer.paymentMethods];
+      paymentMethodsToTry.sort((a, b) => (a.isPrimary === b.isPrimary ? 0 : a.isPrimary ? -1 : 1));
 
-      if (!paymentMethod) {
+      if (paymentMethodsToTry.length === 0) {
         console.warn(`[Scheduler] No payment method found for buyer ${sub.buyerId} of subscription ${sub.id}`);
         await handleBillingFailure(sub, "No payment method on file");
         continue;
       }
 
-      // Simulate card charge logic (declined if last4 is "0000")
-      const chargeSucceeded = paymentMethod.last4 !== "0000";
+      let chargeResult = null;
+      let usedMethod = null;
 
-      if (chargeSucceeded) {
+      for (const method of paymentMethodsToTry) {
+        console.log(`[Scheduler] Attempting charge of $${(amountCents / 100).toFixed(2)} on card ending in ${method.last4}...`);
+        
+        chargeResult = await provider.charge({
+          amountCents,
+          currency: sub.plan.currency,
+          method: {
+            last4: method.last4,
+            simulatorToken: method.simulatorToken,
+            providerToken: method.providerToken,
+          },
+          descriptor: `AppStack subscription renewal for ${sub.product.name}`,
+          idempotencyKey: `renewal_${sub.id}_${sub.nextBillingAt.getTime()}`,
+        });
+
+        if (chargeResult.success) {
+          usedMethod = method;
+          break;
+        } else {
+          console.warn(`[Scheduler] Charge declined on card ending in ${method.last4}: ${chargeResult.failureReason}`);
+        }
+      }
+
+      if (chargeResult && chargeResult.success && usedMethod) {
+        // Update subscription to use the successful card if it differed
+        if (usedMethod.id !== sub.paymentMethodId) {
+          await prisma.subscription.update({
+            where: { id: sub.id },
+            data: { paymentMethodId: usedMethod.id },
+          });
+        }
+
         const nextPeriodStart = sub.nextBillingAt;
         const nextPeriodEnd = addBillingPeriod(nextPeriodStart, sub.plan.billingInterval);
 
@@ -102,6 +146,7 @@ export async function runBillingCycle() {
             status: "PAID",
             description: `Recurring renewal: ${sub.product.name} - ${sub.plan.name} (${sub.seats} seat${sub.seats === 1 ? "" : "s"})`,
             paidAt: now,
+            providerChargeRef: chargeResult.providerRef ?? null,
           },
         });
 
@@ -151,7 +196,8 @@ export async function runBillingCycle() {
 
         console.log(`[Scheduler] Subscription ${sub.id} successfully billed and renewed`);
       } else {
-        await handleBillingFailure(sub, "Card declined by bank simulator");
+        const failureReason = chargeResult?.failureReason || "All payment methods declined";
+        await handleBillingFailure(sub, failureReason);
       }
     } catch (err: any) {
       console.error(`[Scheduler] Failed to process subscription ${sub.id}:`, err.message);
@@ -162,12 +208,15 @@ export async function runBillingCycle() {
 async function handleBillingFailure(sub: any, reason: string) {
   const amountCents = sub.plan.priceCents * sub.seats;
   const retryCount = (sub.billingRetryCount ?? 0) + 1;
-  const maxRetries = 3;
+  
+  const maxRetries = await getPlatformSetting("BILLING_MAX_RETRIES");
+  const retryDelayDays = await getPlatformSetting("BILLING_RETRY_DELAY_DAYS");
+  
   const now = new Date();
 
   if (retryCount < maxRetries) {
     const nextRetry = new Date(now);
-    nextRetry.setDate(nextRetry.getDate() + 1);
+    nextRetry.setDate(nextRetry.getDate() + retryDelayDays);
 
     await prisma.subscription.update({
       where: { id: sub.id },
@@ -273,14 +322,16 @@ async function handleBillingFailure(sub: any, reason: string) {
 
 async function unlockTransactions() {
   console.log("[Scheduler] Running transaction unlock check...");
-  const thirtyDaysAgo = new Date();
-  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  
+  const lockDays = await getPlatformSetting("SALES_FUND_LOCK_DAYS");
+  const lockCutoff = new Date();
+  lockCutoff.setDate(lockCutoff.getDate() - lockDays);
 
   try {
     const result = await prisma.transaction.updateMany({
       where: {
         status: "LOCKED",
-        createdAt: { lte: thirtyDaysAgo },
+        createdAt: { lte: lockCutoff },
       },
       data: {
         status: "AVAILABLE",
@@ -289,5 +340,167 @@ async function unlockTransactions() {
     console.log(`[Scheduler] Unlocked ${result.count} transactions.`);
   } catch (err: any) {
     console.error("[Scheduler] Failed to unlock transactions:", err.message);
+  }
+}
+
+export async function processApprovedRefunds() {
+  console.log("[Scheduler] Processing approved refunds...");
+  const approvedRefunds = await prisma.refundRequest.findMany({
+    where: { status: "APPROVED" },
+    include: {
+      invoice: {
+        include: {
+          product: true,
+        },
+      },
+      buyer: true,
+    },
+  });
+
+  const provider = getPaymentProvider();
+
+  for (const refund of approvedRefunds) {
+    try {
+      console.log(`[Scheduler] Refunding refund request ${refund.id} via provider...`);
+      const refundResult = await provider.refund({
+        amountCents: refund.amountCents,
+        currency: refund.invoice.currency,
+        providerChargeRef: refund.invoice.providerChargeRef,
+      });
+
+      if (refundResult.success) {
+        await prisma.refundRequest.update({
+          where: { id: refund.id },
+          data: {
+            status: "COMPLETED",
+            providerRefundRef: refundResult.providerRef ?? null,
+          },
+        });
+
+        // Notify buyer
+        const notification = await prisma.notification.create({
+          data: {
+            userId: refund.buyerId,
+            title: "Refund Processed",
+            message: `Your refund of $${(refund.amountCents / 100).toFixed(2)} for ${refund.invoice.product.name} has been processed successfully.`,
+            type: "PAYMENT_STATUS",
+            priority: "NORMAL",
+          },
+        });
+        sendNotification(refund.buyerId, notification);
+      } else {
+        await prisma.refundRequest.update({
+          where: { id: refund.id },
+          data: {
+            status: "FAILED",
+            rejectionReason: refundResult.failureReason || "Gateway refund failed",
+          },
+        });
+
+        // Notify buyer of failure
+        const notification = await prisma.notification.create({
+          data: {
+            userId: refund.buyerId,
+            title: "Refund Settlement Failed",
+            message: `We encountered an issue processing your refund of $${(refund.amountCents / 100).toFixed(2)} for ${refund.invoice.product.name}.`,
+            type: "PAYMENT_STATUS",
+            priority: "HIGH",
+          },
+        });
+        sendNotification(refund.buyerId, notification);
+      }
+    } catch (err: any) {
+      console.error(`[Scheduler] Failed to process refund ${refund.id}:`, err.message);
+    }
+  }
+}
+
+export async function processApprovedPayouts() {
+  console.log("[Scheduler] Processing approved payouts...");
+  const approvedPayouts = await prisma.payoutRequest.findMany({
+    where: { status: "APPROVED" },
+    include: {
+      seller: {
+        include: {
+          sellerApplications: {
+            where: { isApproveSeller: "APPROVED" },
+          },
+        },
+      },
+    },
+  });
+
+  const provider = getPaymentProvider();
+
+  for (const payout of approvedPayouts) {
+    try {
+      console.log(`[Scheduler] Disbursing payout request ${payout.id} via provider...`);
+      const disburseResult = await provider.disburse({
+        amountCents: payout.amountCents,
+        currency: "USD",
+        destination: payout.payoutEmail,
+      });
+
+      const businessName = payout.seller.sellerApplications[0]?.businessName || "your business";
+
+      if (disburseResult.success) {
+        await prisma.$transaction(async (tx) => {
+          // Update status to COMPLETED
+          await tx.payoutRequest.update({
+            where: { id: payout.id },
+            data: {
+              status: "COMPLETED",
+              providerPayoutRef: disburseResult.providerRef ?? null,
+            },
+          });
+
+          // Create negative Transaction
+          await tx.transaction.create({
+            data: {
+              sellerId: payout.sellerId,
+              amountCents: -payout.amountCents,
+              type: "PAYOUT",
+              status: "WITHDRAWN",
+              description: `Payout: Sent to ${payout.payoutEmail}`,
+              payoutId: payout.id,
+            },
+          });
+        });
+
+        // Notify seller
+        const notification = await prisma.notification.create({
+          data: {
+            userId: payout.sellerId,
+            title: "Payout Completed",
+            message: `Your payout request of $${(payout.amountCents / 100).toFixed(2)} for ${businessName} has been processed and sent.`,
+            type: "PAYMENT_STATUS",
+            priority: "HIGH",
+          },
+        });
+        sendNotification(payout.sellerId, notification);
+      } else {
+        await prisma.payoutRequest.update({
+          where: { id: payout.id },
+          data: {
+            status: "FAILED",
+            rejectionReason: disburseResult.failureReason || "Gateway payout failed",
+          },
+        });
+
+        // Notify seller of failure
+        const notification = await prisma.notification.create({
+          data: {
+            userId: payout.sellerId,
+            title: "Payout Failed",
+            message: `We were unable to process your payout request of $${(payout.amountCents / 100).toFixed(2)} for ${businessName}. Reason: ${disburseResult.failureReason || "Gateway error"}.`,
+            type: "PAYMENT_STATUS",
+            priority: "HIGH",
+          },
+        });
+        sendNotification(payout.sellerId, notification);
+      }
+    } catch (err: any) {
+      console.error(`[Scheduler] Failed to process payout ${payout.id}:`, err.message);
+    }
   }
 }

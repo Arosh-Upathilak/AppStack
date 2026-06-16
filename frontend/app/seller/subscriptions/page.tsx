@@ -116,11 +116,12 @@ export default function SellerSubscriptionsPage() {
         Seller views omit buyer account id, buyer email, payment method, and profile fields. Operational rows show product, plan, status, seats and revenue only.
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, minmax(0, 1fr))", gap: 16 }}>
         <Metric label="Products" value={String(summary?.productsCount ?? 0)} icon="package" />
         <Metric label="Active subscriptions" value={String(summary?.activeSubscriptions ?? 0)} icon="check_circle" />
         <Metric label="Canceled / pending cancel" value={String(summary?.canceledSubscriptions ?? 0)} icon="trash" />
         <Metric label="Monthly recurring revenue" value={money(summary?.monthlyRecurringRevenueCents ?? 0)} icon="chart" />
+        <Metric label="Total views" value={String(summary?.totalViews ?? 0)} icon="eye" />
       </div>
 
       <div className="card card-pad" style={{ display: "grid", gap: 16 }}>
@@ -173,6 +174,10 @@ export default function SellerSubscriptionsPage() {
                 <div className="row" style={{ justifyContent: "space-between", fontSize: 12.5, color: "var(--ink-3)" }}>
                   <span>{product.activeCount} active</span>
                   <span>{product.canceledCount} canceled</span>
+                </div>
+                <div className="row gap-1" style={{ fontSize: 12, color: "var(--ink-4)", marginTop: 6 }}>
+                  <Icon name="eye" size={12} />
+                  <span>{product.viewCount ?? 0} views</span>
                 </div>
                 <div style={{ marginTop: 10, fontSize: 15, fontWeight: 700, color: "var(--brand)" }}>
                   {money(product.monthlyRevenueCents)}/mo

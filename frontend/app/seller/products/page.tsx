@@ -26,6 +26,7 @@ const emptyPlan = (): DraftPlan => ({
   currency: "USD",
   billingInterval: "MONTHLY",
   isActive: true,
+  refundsEnabled: true,
 });
 
 export default function SellerProductsPage() {
@@ -38,6 +39,7 @@ export default function SellerProductsPage() {
   const [category, setCategory] = useState("CRM");
   const [webhookUrl, setWebhookUrl] = useState("");
   const [similarTo, setSimilarTo] = useState("");
+  const [refundsEnabled, setRefundsEnabled] = useState(true);
   const [plans, setPlans] = useState<DraftPlan[]>([emptyPlan()]);
   const [selectedWebhookProduct, setSelectedWebhookProduct] = useState<Product | null>(null);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
@@ -76,6 +78,7 @@ export default function SellerProductsPage() {
         category,
         webhookUrl,
         webhookTested: !!webhookUrl,
+        refundsEnabled,
         similarTo: similarTo.split(",").map(item => item.trim()).filter(Boolean),
         plans: plans.map(plan => ({
           identifier: plan.identifier || undefined,
@@ -85,6 +88,7 @@ export default function SellerProductsPage() {
           currency: plan.currency,
           billingInterval: plan.billingInterval,
           isActive: plan.isActive,
+          refundsEnabled: plan.refundsEnabled ?? true,
         })),
       });
       setProducts(prev => [product, ...prev]);
@@ -93,6 +97,7 @@ export default function SellerProductsPage() {
       setDescription("");
       setWebhookUrl("");
       setSimilarTo("");
+      setRefundsEnabled(true);
       setPlans([emptyPlan()]);
       toast.success("Product draft created");
     } catch (err) {
@@ -163,6 +168,11 @@ export default function SellerProductsPage() {
               <input className="input" type="url" placeholder="https://your-app.com/webhooks/appstack" value={webhookUrl} onChange={e => setWebhookUrl(e.target.value)} />
             </div>
 
+            <label className="row gap-2" style={{ fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }}>
+              <input type="checkbox" checked={refundsEnabled} onChange={e => setRefundsEnabled(e.target.checked)} />
+              Allow Refunds (Product Level)
+            </label>
+
             <div style={{ display: "grid", gap: 10 }}>
               <div className="row" style={{ justifyContent: "space-between" }}>
                 <label className="field-label" style={{ margin: 0 }}>Plans</label>
@@ -182,6 +192,10 @@ export default function SellerProductsPage() {
                     value={plan.features.join(", ")}
                     onChange={e => updatePlan(plan.localId, { features: e.target.value.split(",").map(item => item.trim()).filter(Boolean) })}
                   />
+                  <label className="row gap-2" style={{ fontSize: 12.5, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+                    <input type="checkbox" checked={plan.refundsEnabled ?? true} onChange={e => updatePlan(plan.localId, { refundsEnabled: e.target.checked })} />
+                    Allow Refunds for this plan
+                  </label>
                 </div>
               ))}
             </div>
@@ -279,6 +293,7 @@ function draftPlansFromProduct(product: Product): DraftPlan[] {
     currency: plan.currency,
     billingInterval: plan.billingInterval,
     isActive: plan.isActive,
+    refundsEnabled: plan.refundsEnabled ?? true,
   }));
 }
 
@@ -297,6 +312,7 @@ function EditRequestModal({
   const [category, setCategory] = useState(product.category);
   const [similarTo, setSimilarTo] = useState(product.similarTo.join(", "));
   const [plans, setPlans] = useState<DraftPlan[]>(draftPlansFromProduct(product));
+  const [refundsEnabled, setRefundsEnabled] = useState(product.refundsEnabled ?? true);
   const [submitting, setSubmitting] = useState(false);
 
   function updatePlan(localId: string, patch: Partial<DraftPlan>) {
@@ -314,6 +330,7 @@ function EditRequestModal({
           shortDescription,
           description,
           category,
+          refundsEnabled,
           similarTo: similarTo.split(",").map(item => item.trim()).filter(Boolean),
           plans: plans.map(plan => ({
             identifier: plan.identifier || undefined,
@@ -323,6 +340,7 @@ function EditRequestModal({
             currency: plan.currency,
             billingInterval: plan.billingInterval,
             isActive: plan.isActive,
+            refundsEnabled: plan.refundsEnabled ?? true,
           })),
         },
       });
@@ -353,6 +371,10 @@ function EditRequestModal({
             <input className="input" value={category} onChange={e => setCategory(e.target.value)} required />
             <input className="input" value={similarTo} onChange={e => setSimilarTo(e.target.value)} />
           </div>
+          <label className="row gap-2" style={{ fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }}>
+            <input type="checkbox" checked={refundsEnabled} onChange={e => setRefundsEnabled(e.target.checked)} />
+            Allow Refunds (Product Level)
+          </label>
           <div className="row" style={{ justifyContent: "space-between" }}>
             <strong style={{ fontSize: 13 }}>Plans</strong>
             <button type="button" className="btn btn-secondary btn-sm" onClick={() => setPlans(prev => [...prev, emptyPlan()])}>
@@ -366,9 +388,13 @@ function EditRequestModal({
                 <input className="input" type="number" min={0} value={plan.priceCents} onChange={e => updatePlan(plan.localId, { priceCents: Number(e.target.value) })} required />
               </div>
               <input className="input" value={plan.features.join(", ")} onChange={e => updatePlan(plan.localId, { features: e.target.value.split(",").map(item => item.trim()).filter(Boolean) })} />
-              <label className="row gap-2" style={{ fontSize: 12.5 }}>
+              <label className="row gap-2" style={{ fontSize: 12.5, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
                 <input type="checkbox" checked={plan.isActive} onChange={e => updatePlan(plan.localId, { isActive: e.target.checked })} />
                 Active plan
+              </label>
+              <label className="row gap-2" style={{ fontSize: 12.5, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+                <input type="checkbox" checked={plan.refundsEnabled ?? true} onChange={e => updatePlan(plan.localId, { refundsEnabled: e.target.checked })} />
+                Allow Refunds for this plan
               </label>
             </div>
           ))}

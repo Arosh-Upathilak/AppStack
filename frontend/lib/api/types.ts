@@ -31,6 +31,7 @@ export interface ProductPlan {
   currency: string;
   billingInterval: BillingInterval;
   isActive: boolean;
+  refundsEnabled: boolean;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -53,6 +54,8 @@ export interface Product {
   rejectionReason?: string | null;
   submittedAt?: string | null;
   publishedAt?: string | null;
+  refundsEnabled: boolean;
+  viewCount: number;
   createdAt?: string;
   updatedAt?: string;
   rating: number;

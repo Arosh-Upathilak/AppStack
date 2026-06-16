@@ -142,6 +142,7 @@ export interface SellerSubscriptionSummary {
   activeSubscriptions: number;
   canceledSubscriptions: number;
   monthlyRecurringRevenueCents: number;
+  totalViews?: number;
 }
 
 export interface SellerProductSubscriptionSummary {
@@ -152,6 +153,7 @@ export interface SellerProductSubscriptionSummary {
   activeCount: number;
   canceledCount: number;
   monthlyRevenueCents: number;
+  viewCount?: number;
 }
 
 export interface SellerSubscriptionRow {

@@ -4,6 +4,7 @@ import { asyncHandler, AppError } from "../utils/errorHandler";
 import prisma from "../utils/prisma";
 import { sendNotification } from "../socket/socketConnect";
 import { formatMoney, sendTransactionEmail } from "../utils/emailNotifications";
+import { getPaymentProvider } from "../services/payments";
 
 type AckAction = "activate" | "change_applied" | "cancel_applied";
 
@@ -49,7 +50,38 @@ async function createSettlementIfMissing(tx: any, subscription: any, paidAt: Dat
     return existing;
   }
 
+  const method = await tx.paymentMethod.findFirst({
+    where: {
+      id: subscription.paymentMethodId ?? undefined,
+    },
+  }) || await tx.paymentMethod.findFirst({
+    where: { userId: subscription.buyerId, isPrimary: true },
+  }) || await tx.paymentMethod.findFirst({
+    where: { userId: subscription.buyerId },
+  });
+
+  if (!method) {
+    throw new AppError("No payment method found for buyer", 400);
+  }
+
   const amountCents = subscription.plan.priceCents * subscription.seats;
+  const provider = getPaymentProvider();
+  const chargeResult = await provider.charge({
+    amountCents,
+    currency: subscription.plan.currency,
+    method: {
+      last4: method.last4,
+      simulatorToken: method.simulatorToken,
+      providerToken: method.providerToken,
+    },
+    descriptor: `SaaS Activation: ${subscription.product.name}`,
+    idempotencyKey: `activation_${subscription.id}`,
+  });
+
+  if (!chargeResult.success) {
+    throw new AppError(chargeResult.failureReason || "Activation payment failed", 400);
+  }
+
   const invoice = await tx.invoice.create({
     data: {
       number: invoiceNumber(),
@@ -62,6 +94,7 @@ async function createSettlementIfMissing(tx: any, subscription: any, paidAt: Dat
       status: "PAID",
       description: `SaaS Activation: ${subscription.product.name} - ${subscription.plan.name} (${subscription.seats} seat${subscription.seats === 1 ? "" : "s"})`,
       paidAt,
+      providerChargeRef: chargeResult.providerRef ?? null,
     },
   });
 

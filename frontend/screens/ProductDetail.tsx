@@ -8,6 +8,7 @@ import AppLogo from '@/components/AppLogo';
 import Badge from '@/components/Badge';
 import { ToastContext } from '@/components/DashboardChrome';
 import { getProduct, listReviews, checkReviewEligibility, submitProductReview } from '@/lib/api/products';
+import { getRecaptchaToken } from '@/lib/recaptcha';
 import {
   createSubscription,
   listPaymentMethods,
@@ -146,7 +147,8 @@ function CheckoutModal({
     setSendingOtp(true);
     setOtpMessage(null);
     try {
-      const result = await requestRecipientVerification(recipientEmail);
+      const token = await getRecaptchaToken("verify_recipient");
+      const result = await requestRecipientVerification(recipientEmail, token);
       setRecipientVerifyToken(result.verifyToken);
       setOtpRequired(result.required);
       setOtpMessage(result.message);
@@ -303,6 +305,14 @@ export default function ProductDetail({ productId, mode = 'buyer' }: ProductDeta
             return;
           }
           setProduct(loadedProduct);
+          if (typeof window !== "undefined" && (window as any).fbq) {
+            (window as any).fbq("track", "ViewContent", {
+              content_ids: [loadedProduct.id],
+              content_type: "product",
+              content_name: loadedProduct.name,
+              content_category: loadedProduct.category,
+            });
+          }
           setReviews(loadedReviews);
           setMethods(paymentResponse.methods);
           setEligible(reviewEligibility.eligible);
@@ -381,13 +391,17 @@ export default function ProductDetail({ productId, mode = 'buyer' }: ProductDeta
     }
   };
 
-  const handleReviewSubmit = async (e: React.FormEvent) => {
+  async function handleReviewSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!reviewBody.trim()) return;
+    if (!reviewBody.trim()) {
+      toast('Review body cannot be empty.');
+      return;
+    }
 
     setSubmittingReview(true);
     try {
-      await submitProductReview(productId, { rating, body: reviewBody.trim() });
+      const token = await getRecaptchaToken("submit_review");
+      await submitProductReview(productId, { rating, body: reviewBody.trim(), token });
       toast('Thank you! Your review has been submitted.');
       setReviewBody('');
       setRating(5);

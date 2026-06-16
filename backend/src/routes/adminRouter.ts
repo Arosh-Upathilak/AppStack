@@ -23,10 +23,15 @@ import {
   listUsers,
   updateUserRole,
   deleteUserGDPR,
+  createUserByAdmin,
 } from "../controllers/userControllers";
 import {
   listAdminWebhookEvents,
 } from "../controllers/webhookController";
+import {
+  getSettings,
+  updateSettings,
+} from "../controllers/settingsController";
 import {
   runBillingCycle,
 } from "../services/scheduler";
@@ -36,6 +41,13 @@ import {
 } from "../middleware/authMiddleware";
 
 const adminRouter = express.Router();
+
+adminRouter.post(
+  "/users",
+  authMiddleware,
+  authMiddlewareRequireRole("ADMIN"),
+  createUserByAdmin,
+);
 
 adminRouter.get(
   "/products/pending",
@@ -137,6 +149,19 @@ adminRouter.get(
   authMiddleware,
   authMiddlewareRequireRole("ADMIN"),
   listAdminWebhookEvents,
+);
+
+adminRouter.get(
+  "/settings",
+  authMiddleware,
+  authMiddlewareRequireRole("ADMIN"),
+  getSettings,
+);
+adminRouter.patch(
+  "/settings",
+  authMiddleware,
+  authMiddlewareRequireRole("ADMIN"),
+  updateSettings,
 );
 
 adminRouter.post(

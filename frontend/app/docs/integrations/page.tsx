@@ -80,6 +80,27 @@ ${ackPayload}`}</pre>
           Webhook payloads include only the consented recipient email needed to provision the SaaS subscription. AppStack does not send buyer account id, buyer profile fields, payment method details, or card data to sellers.
         </p>
       </section>
+
+      <section className="card card-pad" style={{ display: "grid", gap: 12 }}>
+        <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>Webhook retry guarantee</h2>
+        <p style={{ margin: 0, color: "var(--ink-2)", lineHeight: 1.6 }}>
+          Failed webhook deliveries are retried up to 10 times with exponential backoff extending up to 24 hours (intervals: 1m, 5m, 15m, 1h, 2h, 4h, 8h, 12h, 24h). Deliveries are durable at-least-once, and consumer endpoints should ensure idempotency based on `X-AppStack-Event-Id`.
+        </p>
+      </section>
+
+      <section className="card card-pad" style={{ display: "grid", gap: 12 }}>
+        <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>Pluggable payment provider seam</h2>
+        <p style={{ margin: 0, color: "var(--ink-2)", lineHeight: 1.6 }}>
+          AppStack operates on a provider interface allowing the exchange of simulator card processing for production gateways (like Stripe) simply by implementing `tokenizeCard`, `charge`, `refund`, and `disburse`. View the repository <code style={{ color: "var(--brand)" }}>PAYMENTS_INTEGRATION.md</code> for the integration blueprint.
+        </p>
+      </section>
+
+      <section className="card card-pad" style={{ display: "grid", gap: 12 }}>
+        <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>Sandbox SaaS integration receiver</h2>
+        <p style={{ margin: 0, color: "var(--ink-2)", lineHeight: 1.6 }}>
+          Test the full purchase loop using the mock receiver under <code style={{ color: "var(--brand)" }}>examples/mock-saas/</code>. Running the mock receiver validates request signature HMAC, prints logs, and automatically acknowledges event actions by calling AppStack back.
+        </p>
+      </section>
     </main>
   );
 }

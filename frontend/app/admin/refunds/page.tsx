@@ -89,70 +89,72 @@ export default function AdminPendingRefundsPage() {
         </div>
       ) : (
         <div className="card" style={{ overflow: "hidden" }}>
-          <table className="tbl">
-            <thead>
-              <tr>
-                <th style={{ paddingLeft: 20 }}>Buyer</th>
-                <th>SaaS Product</th>
-                <th>Reason</th>
-                <th>Amount</th>
-                <th style={{ textAlign: "right", paddingRight: 20 }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map(item => {
-                const busy = busyId === item.id;
-                const buyerName = item.buyer ? `${item.buyer.firstName || ""} ${item.buyer.lastName || ""}`.trim() : "Unknown Buyer";
-                const buyerEmail = item.buyer?.email || "Unknown Email";
+          <div className="table-container" style={{ overflowX: "auto" }}>
+            <table className="tbl">
+              <thead>
+                <tr>
+                  <th style={{ paddingLeft: 20 }}>Buyer</th>
+                  <th>SaaS Product</th>
+                  <th>Reason</th>
+                  <th>Amount</th>
+                  <th style={{ textAlign: "right", paddingRight: 20 }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map(item => {
+                  const busy = busyId === item.id;
+                  const buyerName = item.buyer ? `${item.buyer.firstName || ""} ${item.buyer.lastName || ""}`.trim() : "Unknown Buyer";
+                  const buyerEmail = item.buyer?.email || "Unknown Email";
 
-                return (
-                  <tr key={item.id}>
-                    <td style={{ paddingLeft: 20 }}>
-                      <div style={{ fontWeight: 600, color: "var(--ink-1)" }}>{buyerName}</div>
-                      <div className="muted" style={{ fontSize: 12 }}>{buyerEmail}</div>
-                    </td>
-                    <td>
-                      <div style={{ fontWeight: 600 }}>{item.invoice?.product?.name || "Unknown Product"}</div>
-                      <div className="muted" style={{ fontSize: 12 }}>{item.invoice?.description}</div>
-                    </td>
-                    <td style={{ fontSize: 13, color: "var(--ink-2)", maxWidth: 200, wordBreak: "break-word" }}>
-                      &quot;{item.reason}&quot;
-                      <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>Requested {new Date(item.createdAt).toLocaleDateString()}</div>
-                    </td>
-                    <td>
-                      <div style={{ fontWeight: 600, color: "var(--ink-1)" }}>
-                        ${((item.amountCents) / 100).toFixed(2)}
-                      </div>
-                      <span className="muted" style={{ fontSize: 11 }}>{item.invoice?.currency || "USD"}</span>
-                    </td>
-                    <td style={{ textAlign: "right", paddingRight: 20 }}>
-                      <div style={{ display: "inline-flex", gap: 8 }}>
-                        <button
-                          type="button"
-                          className="btn btn-secondary btn-sm"
-                          disabled={busy}
-                          onClick={() => {
-                            setRejectingId(item.id);
-                            setRejectionReason("");
-                          }}
-                        >
-                          Reject
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-primary btn-sm"
-                          disabled={busy}
-                          onClick={() => handleApprove(item.id)}
-                        >
-                          {busy ? "Processing..." : "Approve"}
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                  return (
+                    <tr key={item.id}>
+                      <td style={{ paddingLeft: 20 }}>
+                        <div style={{ fontWeight: 600, color: "var(--ink-1)" }}>{buyerName}</div>
+                        <div className="muted" style={{ fontSize: 12 }}>{buyerEmail}</div>
+                      </td>
+                      <td>
+                        <div style={{ fontWeight: 600 }}>{item.invoice?.product?.name || "Unknown Product"}</div>
+                        <div className="muted" style={{ fontSize: 12 }}>{item.invoice?.description}</div>
+                      </td>
+                      <td style={{ fontSize: 13, color: "var(--ink-2)", maxWidth: 200, wordBreak: "break-word" }}>
+                        &quot;{item.reason}&quot;
+                        <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>Requested {new Date(item.createdAt).toLocaleDateString()}</div>
+                      </td>
+                      <td>
+                        <div style={{ fontWeight: 600, color: "var(--ink-1)" }}>
+                          ${((item.amountCents) / 100).toFixed(2)}
+                        </div>
+                        <span className="muted" style={{ fontSize: 11 }}>{item.invoice?.currency || "USD"}</span>
+                      </td>
+                      <td style={{ textAlign: "right", paddingRight: 20 }}>
+                        <div style={{ display: "inline-flex", gap: 8 }}>
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            disabled={busy}
+                            onClick={() => {
+                              setRejectingId(item.id);
+                              setRejectionReason("");
+                            }}
+                          >
+                            Reject
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-primary btn-sm"
+                            disabled={busy}
+                            onClick={() => handleApprove(item.id)}
+                          >
+                            {busy ? "Processing..." : "Approve"}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 

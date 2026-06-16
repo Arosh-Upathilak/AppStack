@@ -69,62 +69,64 @@ export default function AdminPendingCancellationsPage() {
         </div>
       ) : (
         <div className="card" style={{ overflow: "hidden" }}>
-          <table className="tbl">
-            <thead>
-              <tr>
-                <th style={{ paddingLeft: 20 }}>Buyer</th>
-                <th>SaaS Product</th>
-                <th>Plan Detail</th>
-                <th>Requested Date</th>
-                <th style={{ textAlign: "right", paddingRight: 20 }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map(item => {
-                const busy = busyId === item.id;
-                const requestedAt = item.canceledAt ? new Date(item.canceledAt).toLocaleString() : new Date().toLocaleString();
-                const buyerName = item.buyer ? `${item.buyer.firstName || ""} ${item.buyer.lastName || ""}`.trim() : "Unknown Buyer";
-                const buyerEmail = item.buyer?.email || item.recipientEmail;
+          <div className="table-container" style={{ overflowX: "auto" }}>
+            <table className="tbl">
+              <thead>
+                <tr>
+                  <th style={{ paddingLeft: 20 }}>Buyer</th>
+                  <th>SaaS Product</th>
+                  <th>Plan Detail</th>
+                  <th>Requested Date</th>
+                  <th style={{ textAlign: "right", paddingRight: 20 }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map(item => {
+                  const busy = busyId === item.id;
+                  const requestedAt = item.canceledAt ? new Date(item.canceledAt).toLocaleString() : new Date().toLocaleString();
+                  const buyerName = item.buyer ? `${item.buyer.firstName || ""} ${item.buyer.lastName || ""}`.trim() : "Unknown Buyer";
+                  const buyerEmail = item.buyer?.email || item.recipientEmail;
 
-                return (
-                  <tr key={item.id}>
-                    <td style={{ paddingLeft: 20 }}>
-                      <div style={{ fontWeight: 600, color: "var(--ink-1)" }}>{buyerName}</div>
-                      <div className="muted" style={{ fontSize: 12 }}>{buyerEmail}</div>
-                    </td>
-                    <td>{item.product?.name || "Unknown Product"}</td>
-                    <td>
-                      <div style={{ fontWeight: 600 }}>{item.plan?.name || "Unknown Plan"}</div>
-                      <div className="muted" style={{ fontSize: 12 }}>
-                        ${((item.plan?.priceCents || 0) / 100).toFixed(2)} · {item.seats} seat{item.seats === 1 ? "" : "s"}
-                      </div>
-                    </td>
-                    <td style={{ fontSize: 13, color: "var(--ink-3)" }}>{requestedAt}</td>
-                    <td style={{ textAlign: "right", paddingRight: 20 }}>
-                      <div style={{ display: "inline-flex", gap: 8 }}>
-                        <button
-                          type="button"
-                          className="btn btn-secondary btn-sm"
-                          disabled={busy}
-                          onClick={() => handleDecision(item.id, "REJECT")}
-                        >
-                          Reject
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-primary btn-sm"
-                          disabled={busy}
-                          onClick={() => handleDecision(item.id, "APPROVE")}
-                        >
-                          {busy ? "Processing..." : "Approve"}
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                  return (
+                    <tr key={item.id}>
+                      <td style={{ paddingLeft: 20 }}>
+                        <div style={{ fontWeight: 600, color: "var(--ink-1)" }}>{buyerName}</div>
+                        <div className="muted" style={{ fontSize: 12 }}>{buyerEmail}</div>
+                      </td>
+                      <td>{item.product?.name || "Unknown Product"}</td>
+                      <td>
+                        <div style={{ fontWeight: 600 }}>{item.plan?.name || "Unknown Plan"}</div>
+                        <div className="muted" style={{ fontSize: 12 }}>
+                          ${((item.plan?.priceCents || 0) / 100).toFixed(2)} · {item.seats} seat{item.seats === 1 ? "" : "s"}
+                        </div>
+                      </td>
+                      <td style={{ fontSize: 13, color: "var(--ink-3)" }}>{requestedAt}</td>
+                      <td style={{ textAlign: "right", paddingRight: 20 }}>
+                        <div style={{ display: "inline-flex", gap: 8 }}>
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            disabled={busy}
+                            onClick={() => handleDecision(item.id, "REJECT")}
+                          >
+                            Reject
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-primary btn-sm"
+                            disabled={busy}
+                            onClick={() => handleDecision(item.id, "APPROVE")}
+                          >
+                            {busy ? "Processing..." : "Approve"}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>

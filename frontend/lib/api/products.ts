@@ -15,6 +15,7 @@ export interface ProductPlanInput {
   currency?: string;
   billingInterval?: BillingInterval;
   isActive?: boolean;
+  refundsEnabled?: boolean;
 }
 
 export interface ProductInput {
@@ -26,6 +27,7 @@ export interface ProductInput {
   hue?: string;
   webhookUrl?: string;
   webhookTested?: boolean;
+  refundsEnabled?: boolean;
   plans: ProductPlanInput[];
 }
 
@@ -41,6 +43,7 @@ function mockProductFromLegacy(product: (typeof PRODUCTS)[number]): Product {
       currency: "USD",
       billingInterval: "MONTHLY",
       isActive: true,
+      refundsEnabled: true,
     },
   ];
 
@@ -57,6 +60,8 @@ function mockProductFromLegacy(product: (typeof PRODUCTS)[number]): Product {
     hue: product.hue,
     status: "APPROVED",
     webhookTested: true,
+    refundsEnabled: true,
+    viewCount: 0,
     rating: product.rating,
     reviewsCount: product.reviews,
     fromCents: product.from * 100,
@@ -351,7 +356,7 @@ export async function checkReviewEligibility(productId: string): Promise<ReviewE
 
 export async function submitProductReview(
   productId: string,
-  input: { rating: number; body: string }
+  input: { rating: number; body: string; token?: string }
 ): Promise<{ success: boolean; message: string; review: Review }> {
   const headers = await userAuthorization();
   const res = await axios.post<{ success: boolean; message: string; review: Review }>(

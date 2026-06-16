@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import Icon from "@/components/Icon";
 import { toast } from "react-toastify";
-import { getUsers, updateUserRole, deleteUserGDPR, sendUserPasswordReset, updateUserProfile } from "@/lib/api/admin";
+import { getUsers, updateUserRole, deleteUserGDPR, sendUserPasswordReset, updateUserProfile, createUserByAdmin } from "@/lib/api/admin";
 import type { UserAdmin } from "@/lib/api/admin";
 import { getErrorMessage } from "@/lib/api/errors";
 
@@ -17,6 +17,12 @@ export default function AdminUsersPage() {
   const [totalPages, setTotalPages] = useState(1);
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("");
+
+  // Add User Modal State
+  const [addUserModalOpen, setAddUserModalOpen] = useState(false);
+  const [newEmail, setNewEmail] = useState("");
+  const [newName, setNewName] = useState("");
+  const [newRoles, setNewRoles] = useState<UserRole[]>(["BUYER"]);
 
   // Role Edit Modal State
   const [editingUser, setEditingUser] = useState<UserAdmin | null>(null);
@@ -47,6 +53,45 @@ export default function AdminUsersPage() {
     }, 300); // Debounce search
     return () => window.clearTimeout(timeout);
   }, [loadUsers]);
+
+  const handleToggleNewRole = (role: UserRole) => {
+    if (newRoles.includes(role)) {
+      setNewRoles(newRoles.filter((r) => r !== role));
+    } else {
+      setNewRoles([...newRoles, role]);
+    }
+  };
+
+  const handleCreateUserSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newEmail || !newName) {
+      toast.error("Email and Name are required");
+      return;
+    }
+    if (newRoles.length === 0) {
+      toast.error("At least one role must be selected");
+      return;
+    }
+
+    try {
+      setSubmitting(true);
+      const res = await createUserByAdmin({
+        email: newEmail.trim(),
+        name: newName.trim(),
+        roles: newRoles,
+      });
+      toast.success(res.message || "User created successfully!");
+      setAddUserModalOpen(false);
+      setNewEmail("");
+      setNewName("");
+      setNewRoles(["BUYER"]);
+      void loadUsers(1);
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Failed to create user"));
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const handleOpenEditRoles = (user: UserAdmin) => {
     setEditingUser(user);
@@ -181,9 +226,14 @@ export default function AdminUsersPage() {
           </select>
         </div>
 
-        <button onClick={() => loadUsers(page)} className="btn btn-secondary" disabled={loading}>
-          <Icon name="refresh" size={14} className={loading ? "animate-spin" : ""} /> Refresh
-        </button>
+        <div style={{ display: "flex", gap: 12 }}>
+          <button onClick={() => setAddUserModalOpen(true)} className="btn btn-primary" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <Icon name="plus" size={14} /> Add User
+          </button>
+          <button onClick={() => loadUsers(page)} className="btn btn-secondary" style={{ display: "flex", alignItems: "center", gap: 6 }} disabled={loading}>
+            <Icon name="refresh" size={14} className={loading ? "animate-spin" : ""} /> Refresh
+          </button>
+        </div>
       </div>
 
       {/* Users Table */}
@@ -452,6 +502,91 @@ export default function AdminUsersPage() {
                 </button>
                 <button type="submit" className="btn btn-primary" disabled={submitting}>
                   {submitting ? "Saving..." : "Save profile"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Add User Modal */}
+      {addUserModalOpen && (
+        <div className="modal-overlay" onClick={() => setAddUserModalOpen(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 400 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>Add New User</h3>
+              <button onClick={() => setAddUserModalOpen(false)} className="btn btn-ghost btn-sm" style={{ padding: 4 }}>
+                <Icon name="x" size={16} />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateUserSubmit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              <div>
+                <label className="field-label" style={{ fontWeight: 600 }}>Full Name</label>
+                <input
+                  type="text"
+                  className="input"
+                  placeholder="e.g. John Doe"
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="field-label" style={{ fontWeight: 600 }}>Email Address</label>
+                <input
+                  type="email"
+                  className="input"
+                  placeholder="e.g. john@example.com"
+                  value={newEmail}
+                  onChange={(e) => setNewEmail(e.target.value)}
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="field-label" style={{ fontWeight: 600, marginBottom: 8 }}>Roles</label>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {ROLE_OPTIONS.map((role) => {
+                    const isChecked = newRoles.includes(role);
+                    return (
+                      <label
+                        key={role}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 10,
+                          padding: 10,
+                          border: "1px solid var(--line)",
+                          borderRadius: 8,
+                          cursor: "pointer",
+                          background: isChecked ? "var(--brand-soft)" : "var(--surface)",
+                          borderColor: isChecked ? "var(--brand)" : "var(--line)",
+                          fontSize: 13.5,
+                          fontWeight: 500,
+                          color: "var(--ink-1)",
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => handleToggleNewRole(role)}
+                          style={{ width: 16, height: 16 }}
+                        />
+                        <span>{role}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="row gap-2" style={{ justifyContent: "flex-end", marginTop: 8 }}>
+                <button type="button" className="btn btn-secondary" onClick={() => setAddUserModalOpen(false)} disabled={submitting}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-primary" disabled={submitting}>
+                  {submitting ? "Creating..." : "Create User"}
                 </button>
               </div>
             </form>

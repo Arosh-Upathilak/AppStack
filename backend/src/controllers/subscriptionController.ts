@@ -9,6 +9,8 @@ import { transporter } from "../utils/nodeMailer";
 import { otpTemplate } from "../template/otpEmail";
 import { emailRegex } from "../utils/validation";
 import { formatMoney, sendTransactionEmail } from "../utils/emailNotifications";
+import { getPaymentProvider } from "../services/payments";
+import { verifyRecaptcha } from "../utils/recaptcha";
 
 const includeSubscription = {
   product: true,
@@ -134,7 +136,39 @@ async function settleSubscriptionPayment(client: any, args: {
     return { invoice: existingInvoice, transaction: null };
   }
 
+  const method = await client.paymentMethod.findFirst({
+    where: {
+      userId: args.buyerId,
+      subscriptions: { some: { id: args.subscriptionId } },
+    },
+  }) || await client.paymentMethod.findFirst({
+    where: { userId: args.buyerId, isPrimary: true },
+  }) || await client.paymentMethod.findFirst({
+    where: { userId: args.buyerId },
+  });
+
+  if (!method) {
+    throw new AppError("No payment method found on file", 400);
+  }
+
   const amountCents = args.plan.priceCents * args.seats;
+  const provider = getPaymentProvider();
+  const chargeResult = await provider.charge({
+    amountCents,
+    currency: args.plan.currency,
+    method: {
+      last4: method.last4,
+      simulatorToken: method.simulatorToken,
+      providerToken: method.providerToken,
+    },
+    descriptor: `${args.descriptionPrefix ?? "Sale"}: ${args.product.name}`,
+    idempotencyKey: `initial_${args.subscriptionId}`,
+  });
+
+  if (!chargeResult.success) {
+    throw new AppError(chargeResult.failureReason || "Payment failed", 400);
+  }
+
   const invoice = await client.invoice.create({
     data: {
       number: invoiceNumber(),
@@ -147,6 +181,7 @@ async function settleSubscriptionPayment(client: any, args: {
       status: "PAID",
       description: `${args.descriptionPrefix ?? "Sale"}: ${args.product.name} - ${args.plan.name} (${args.seats} seat${args.seats === 1 ? "" : "s"})`,
       paidAt: args.paidAt,
+      providerChargeRef: chargeResult.providerRef ?? null,
     },
     include: {
       product: true,
@@ -416,7 +451,9 @@ export const createSubscription = asyncHandler(
 export const requestRecipientVerification = asyncHandler(
   async (req: Request, res: Response) => {
     const buyerId = (req as any).user.id;
-    const { recipientEmail } = req.body as { recipientEmail?: string };
+    const { recipientEmail, token } = req.body as { recipientEmail?: string; token?: string };
+
+    await verifyRecaptcha(token, "verify_recipient");
 
     if (!recipientEmail || !emailRegex.test(recipientEmail)) {
       throw new AppError("A valid recipientEmail is required", 400);
@@ -592,6 +629,37 @@ export const updateSubscription = asyncHandler(
 
       // Charge difference if positive
       if (amountToCharge > 0) {
+        const method = await prisma.paymentMethod.findFirst({
+          where: {
+            id: subscription.paymentMethodId ?? undefined,
+          },
+        }) || await prisma.paymentMethod.findFirst({
+          where: { userId: buyerId, isPrimary: true },
+        }) || await prisma.paymentMethod.findFirst({
+          where: { userId: buyerId },
+        });
+
+        if (!method) {
+          throw new AppError("No payment method found on file for pro-rated charge", 400);
+        }
+
+        const provider = getPaymentProvider();
+        const chargeResult = await provider.charge({
+          amountCents: amountToCharge,
+          currency: newPlan.currency,
+          method: {
+            last4: method.last4,
+            simulatorToken: method.simulatorToken,
+            providerToken: method.providerToken,
+          },
+          descriptor: `Plan Upgrade: ${subscription.product.name} pro-rated difference`,
+          idempotencyKey: `upgrade_${subscription.id}_${now.getTime()}`,
+        });
+
+        if (!chargeResult.success) {
+          throw new AppError(chargeResult.failureReason || "Pro-rated upgrade payment failed", 400);
+        }
+
         await prisma.invoice.create({
           data: {
             number: invoiceNumber(),
@@ -604,6 +672,7 @@ export const updateSubscription = asyncHandler(
             status: "PAID",
             description: `Plan Upgrade Pro-rated Charge: ${subscription.product.name} - ${newPlan.name} (pro-rated difference)`,
             paidAt: now,
+            providerChargeRef: chargeResult.providerRef ?? null,
           },
         });
       } else if (amountToCharge < 0) {
