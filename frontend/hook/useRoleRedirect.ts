@@ -49,6 +49,14 @@ export function useRoleRedirect() {
       return;
     }
 
+    // Return the user to where they came from (e.g. a product they tried to
+    // purchase while logged out). Only allow safe internal paths.
+    const next = searchParams.get("next");
+    if (next && next.startsWith("/") && !next.startsWith("//")) {
+      router.replace(next);
+      return;
+    }
+
     router.replace("/");
   }, [status, session, router, searchParams]);
 }

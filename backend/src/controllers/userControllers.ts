@@ -474,6 +474,63 @@ const googleLogin = asyncHandler(async (req: Request, res: Response) => {
   });
 });
 
+// Get the current authenticated user's profile
+const getCurrentUser = asyncHandler(async (req: Request, res: Response) => {
+  const requestUser = (req as any).user;
+
+  if (!requestUser?.id) {
+    throw new AppError("Unauthorized", 401);
+  }
+
+  return res.status(200).json({
+    success: true,
+    message: "Current user fetched successfully",
+    user: {
+      id: requestUser.id,
+      email: requestUser.email,
+      role: requestUser.roles,
+      firstName: requestUser.firstName,
+      lastName: requestUser.lastName,
+      avatarUrl: requestUser.avatarUrl,
+      sellerStatus: await getSellerStatus(requestUser.id),
+    },
+  });
+});
+
+// Update the current authenticated user's profile (name + avatar)
+const updateProfile = asyncHandler(async (req: Request, res: Response) => {
+  const requestUser = (req as any).user;
+
+  if (!requestUser?.id) {
+    throw new AppError("Unauthorized", 401);
+  }
+
+  const { firstName, lastName, avatarUrl } = req.body;
+
+  const updatedUser = await prisma.user.update({
+    where: { id: requestUser.id },
+    data: {
+      ...(firstName !== undefined && { firstName }),
+      ...(lastName !== undefined && { lastName }),
+      ...(avatarUrl !== undefined && { avatarUrl }),
+    },
+  });
+
+  return res.status(200).json({
+    success: true,
+    message: "Profile updated successfully",
+    user: {
+      id: updatedUser.id,
+      email: updatedUser.email,
+      role: updatedUser.roles,
+      firstName: updatedUser.firstName,
+      lastName: updatedUser.lastName,
+      avatarUrl: updatedUser.avatarUrl,
+      sellerStatus: await getSellerStatus(updatedUser.id),
+    },
+  });
+});
+
 export {
   createUser,
   loginUser,
@@ -482,4 +539,6 @@ export {
   forgotPasswordSendEmail,
   resetPassword,
   googleLogin,
+  getCurrentUser,
+  updateProfile,
 };

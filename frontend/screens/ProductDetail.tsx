@@ -293,12 +293,12 @@ export default function ProductDetail({ productId, mode = 'buyer' }: ProductDeta
   const savings = (monthly - annualMonthly) * 12;
 
   const backHref = mode === 'buyer' ? '/buyer/marketplace' : '/marketplace';
-  const ctaLabel = mode === 'buyer' ? 'Subscribe' : 'Sign up to subscribe';
+  const ctaLabel = mode === 'buyer' ? 'Subscribe' : 'Sign Up to Purchase';
   const ctaAction = () => {
     if (mode === 'buyer') {
       setShowCheckout(true);
     } else {
-      router.push(`/register?next=/marketplace/${productId}`);
+      router.push(`/login?next=/marketplace/${productId}`);
     }
   };
 
