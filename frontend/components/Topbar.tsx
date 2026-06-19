@@ -3,6 +3,7 @@
 import React from "react";
 import Icon from "./Icon";
 import RoleSwitcher from "./RoleSwitcher";
+import TopbarSearch from "./TopbarSearch";
 
 interface TopbarProps {
   crumbs: string[];
@@ -19,20 +20,13 @@ export default function Topbar({ crumbs }: TopbarProps) {
           </React.Fragment>
         ))}
       </div>
-      <div className="tb-search">
-        <Icon name="search" size={14} className="tb-search-icon" />
-        <input placeholder="Search subscriptions, products, invoices…" />
-        <span className="tb-kbd">⌘ K</span>
-      </div>
+      <TopbarSearch />
       <RoleSwitcher />
       {/*
         Notifications live in the side nav (live unread badge via
-        useNotificationStore). Removed the redundant topbar bell here to avoid
-        the duplicate notification entry point — see issue #13.
+        useNotificationStore). No topbar bell here — a single notification
+        entry point avoids a duplicate, dead control in the header.
       */}
-      <button className="tb-icon-btn" title="Inbox">
-        <Icon name="inbox" size={16} />
-      </button>
     </header>
   );
 }

@@ -16,7 +16,7 @@ function PromoStat({ label, value }: { label: string; value: string }) {
   return (
     <div style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 10, padding: '12px 14px' }}>
       <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)', textTransform: 'uppercase', letterSpacing: 0.08, fontWeight: 600 }}>{label}</div>
-      <div style={{ fontSize: 22, fontWeight: 600, marginTop: 4, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>{value}</div>
+      <div style={{ fontSize: 22, fontWeight: 600, marginTop: 4, letterSpacing: '-0.02em' }}>{value}</div>
     </div>
   );
 }
@@ -140,11 +140,18 @@ export default function Marketplace({ mode = 'buyer' }: MarketplaceProps) {
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, fontSize: 13, color: 'var(--ink-3)' }}>
-        <span><strong style={{ color: 'var(--ink-1)' }}>{items.length}</strong> {cat === 'All' ? 'apps' : cat} found</span>
+        <span><strong style={{ color: 'var(--ink-1)' }}>{items.length}</strong> {cat === 'All' ? '' : `${cat} `}{items.length === 1 ? 'app' : 'apps'} found</span>
         <span className="muted">Updated 4 minutes ago</span>
       </div>
 
-      {view === 'grid' ? (
+      {items.length === 0 ? (
+        <div className="card" style={{ padding: 48, textAlign: 'center' }}>
+          <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink-1)', marginBottom: 6 }}>No apps found</div>
+          <div className="muted" style={{ fontSize: 13.5 }}>
+            Nothing matches{query.trim() ? ` “${query.trim()}”` : ''}{cat !== 'All' ? ` in ${cat}` : ''}. Try a different search or category.
+          </div>
+        </div>
+      ) : view === 'grid' ? (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
           {items.map(p => <ProductCard key={p.id} p={p} onClick={() => handleProductClick(p.id)} />)}
         </div>

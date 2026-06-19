@@ -30,7 +30,7 @@ const CARDS = [
         <polyline points="8 6 2 12 8 18"/>
       </svg>
     ),
-    title: 'REST API &amp; webhooks',
+    title: 'REST API & webhooks',
     desc: 'Sellers get a documented REST API and webhooks to integrate their SaaS with AppStack. A sandbox environment is available for testing before going live.',
   },
 ];
