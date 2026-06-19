@@ -10,7 +10,7 @@ export async function requireAdmin() {
   }
 
   if (!session.user.role.includes("ADMIN")) {
-    redirect("/");
+    redirect("/?denied=admin");
   }
 
   return session;
