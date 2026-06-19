@@ -9,6 +9,3 @@ dist/
 
 # logs
 src/logs
-
-# migrations
-prisma/migrations

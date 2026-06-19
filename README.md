@@ -83,6 +83,39 @@ npm run dev
 
 ---
 
+# 🐳 Run with Docker (Recommended)
+
+You can run the entire AppStack application (including PostgreSQL and Redis) using Docker Compose.
+
+## Prerequisites
+- Docker and Docker Compose installed.
+
+## Getting Started
+
+1. **Set up environment variables:**
+   Copy the example environment files at the root:
+   ```bash
+   cp .env.example .env
+   ```
+
+2. **Run with Docker Compose:**
+   ```bash
+   docker compose up --build
+   ```
+
+3. **Verify running services:**
+   - Frontend: `http://localhost:3000`
+   - Backend: `http://localhost:5001`
+   - Health check: `http://localhost:5001/health`
+
+4. **Default seeded credentials:**
+   - **Admin:** `admin@appstack.com` / `admin123`
+   - **Buyer:** `buyer@appstack.com` / `buyer123`
+   - **Seller:** `seller@appstack.com` / `seller123`
+   - **Applicant:** `applicant@appstack.com` / `applicant123`
+
+---
+
 # 📄 License
 
 MIT License

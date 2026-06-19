@@ -14,19 +14,489 @@ datasource db {
 }
 
 model User {
-  id            String        @id @default(uuid())
-  userName      String
-  role          Role          @default(Buyer)
-  email         String        @unique
-  password      String
-  isVerified    Boolean       @default(false)
-  otp           Int
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  id         String  @id @default(uuid())
+  firstName  String?
+  lastName   String?
+  email      String  @unique
+  password   String?
+  avatarUrl  String?
+  isVerified Boolean @default(false)
+
+  roles Role[]
+
+  approvedSellers Seller[]
+  sellerApplications Seller[] @relation("SellerUser")
+  products Product[] @relation("SellerProducts")
+  productChangeRequests ProductChangeRequest[] @relation("SellerProductChangeRequests")
+  reviewedProductChangeRequests ProductChangeRequest[] @relation("ProductChangeReviewedBy")
+  reviewedProducts Product[] @relation("ProductReviewedBy")
+  subscriptions Subscription[] @relation("BuyerSubscriptions")
+  invoices Invoice[] @relation("BuyerInvoices")
+  paymentMethods PaymentMethod[]
+  consents Consent[]
+  reviews Review[]
+  refundRequests RefundRequest[] @relation("BuyerRefunds")
+  transactions Transaction[] @relation("SellerTransactions")
+  payouts PayoutRequest[] @relation("SellerPayouts")
+
+  notifications Notification[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+
+model Seller {
+  id               String           @id @default(uuid())
+  userId           String
+  user             User             @relation("SellerUser", fields: [userId], references: [id], onDelete: Cascade)
+  payoutEmail      String  @unique
+  businessName     String
+  aboutProject     String?
+
+  isApproveSeller  IsApproveSeller  @default(PENDING)
+
+  approveByAdminId  String?
+  approveByAdmin   User?            @relation(fields: [approveByAdminId], references: [id])
+
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  @@index([userId])
+  @@index([isApproveSeller])
+}
+
+model Product {
+  id               String          @id @default(uuid())
+  sellerId         String
+  seller           User            @relation("SellerProducts", fields: [sellerId], references: [id], onDelete: Cascade)
+  name             String
+  slug             String          @unique
+  shortDescription String
+  description      String          @db.Text
+  category         String
+  similarTo        String[]
+  hue              String          @default("#003d9b")
+  status           ProductStatus   @default(DRAFT)
+  webhookUrl       String?
+  webhookTested    Boolean         @default(false)
+  rejectionReason  String?
+  submittedAt      DateTime?
+  publishedAt      DateTime?
+  reviewedAt       DateTime?
+  reviewedById     String?
+  reviewedBy       User?           @relation("ProductReviewedBy", fields: [reviewedById], references: [id])
+  plans            ProductPlan[]
+  reviews          Review[]
+  subscriptions    Subscription[]
+  invoices         Invoice[]
+  consents         Consent[]
+  webhookSecret    String?
+  webhookEvents    WebhookEvent[]
+  changeRequests   ProductChangeRequest[]
+  refundsEnabled   Boolean         @default(true)
+  viewCount        Int             @default(0)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  @@index([sellerId])
+  @@index([status])
+  @@index([category])
+  @@index([createdAt])
+}
+
+model ProductPlan {
+  id              String          @id @default(uuid())
+  productId       String
+  product         Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  identifier      String
+  name            String
+  features        String[]
+  priceCents      Int
+  currency        String          @default("USD")
+  billingInterval BillingInterval @default(MONTHLY)
+  isActive        Boolean         @default(true)
+  subscriptions   Subscription[]
+  invoices        Invoice[]
+  consents        Consent[]
+  refundsEnabled  Boolean         @default(true)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@unique([productId, identifier])
+  @@index([productId])
+}
+
+model Review {
+  id         String   @id @default(uuid())
+  productId  String
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  authorName String
+  authorRole String?
+  rating     Int
+  body       String   @db.Text
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([productId])
+  @@index([userId])
+  @@unique([productId, userId])
+}
+
+model Subscription {
+  id                 String             @id @default(uuid())
+  buyerId            String
+  buyer              User               @relation("BuyerSubscriptions", fields: [buyerId], references: [id], onDelete: Cascade)
+  productId          String
+  product            Product            @relation(fields: [productId], references: [id])
+  planId             String
+  plan               ProductPlan        @relation(fields: [planId], references: [id])
+  paymentMethodId    String?
+  paymentMethod      PaymentMethod?     @relation(fields: [paymentMethodId], references: [id], onDelete: SetNull)
+  recipientEmail     String
+  seats              Int                @default(1)
+  status             SubscriptionStatus @default(ACTIVE)
+  currentPeriodStart DateTime           @default(now())
+  currentPeriodEnd   DateTime
+  nextBillingAt      DateTime
+  canceledAt         DateTime?
+  pendingPlanId      String?
+  adminCancellationApprovedAt DateTime?
+  billingRetryCount  Int                @default(0)
+  lastBillingFailureAt DateTime?
+  nextBillingRetryAt DateTime?
+  integrationStatusMessage String?          @db.Text
+  invoices           Invoice[]
+  consents           Consent[]
+  refundRequests     RefundRequest[]
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  @@index([buyerId])
+  @@index([productId])
+  @@index([planId])
+  @@index([status])
+  @@index([nextBillingAt])
+  @@index([nextBillingRetryAt])
+  @@index([adminCancellationApprovedAt])
+}
+
+model Invoice {
+  id             String        @id @default(uuid())
+  number         String        @unique
+  buyerId        String
+  buyer          User          @relation("BuyerInvoices", fields: [buyerId], references: [id], onDelete: Cascade)
+  subscriptionId String?
+  subscription   Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  productId      String
+  product        Product       @relation(fields: [productId], references: [id])
+  planId         String
+  plan           ProductPlan   @relation(fields: [planId], references: [id])
+  amountCents    Int
+  currency       String        @default("USD")
+  status         InvoiceStatus @default(PAID)
+  description    String
+  issuedAt       DateTime      @default(now())
+  paidAt         DateTime?
+  providerChargeRef String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  refundRequests RefundRequest[]
+  transactions Transaction[]
+
+  @@index([buyerId])
+  @@index([subscriptionId])
+  @@index([productId])
+  @@index([issuedAt])
+}
+
+model PaymentMethod {
+  id             String         @id @default(uuid())
+  userId         String
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  brand          String
+  last4          String
+  expMonth       Int
+  expYear        Int
+  isPrimary      Boolean        @default(false)
+  simulatorToken String
+  providerToken  String?
+  subscriptions  Subscription[]
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@index([userId])
+  @@index([userId, isPrimary])
+}
+
+model Consent {
+  id             String       @id @default(uuid())
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscriptionId String?
+  subscription   Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  productId      String?
+  product        Product?     @relation(fields: [productId], references: [id], onDelete: SetNull)
+  planId         String?
+  plan           ProductPlan? @relation(fields: [planId], references: [id], onDelete: SetNull)
+  type           ConsentType
+  recipientEmail String
+  ipAddress      String?
+  userAgent      String?
+  agreedAt       DateTime     @default(now())
+
+  @@index([userId])
+  @@index([subscriptionId])
+  @@index([type])
+}
+
+model Notification {
+  id        String               @id @default(uuid())
+
+  userId    String
+  user      User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  title     String
+  message   String               @db.Text
+  type      NotificationType
+  isRead    Boolean              @default(false)
+  priority  NotificationPriority @default(NORMAL)
+  
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
+
+  @@index([userId])
+  @@index([userId, isRead])
+  @@index([userId, type])
+  @@index([createdAt])
 }
 
 enum Role {
-  Admin
-  Buyer
-  Seller
+  BUYER
+  SELLER
+  ADMIN
+}
+
+enum IsApproveSeller{
+  PENDING
+  APPROVED
+  DENIED
+}
+
+enum NotificationType {
+  SELLER_PENDING
+  SELLER_APPROVED
+  SELLER_REJECTED
+  ORDER_UPDATE
+  PAYMENT_STATUS
+  PROMOTION
+  SYSTEM_ALERT
+  SUBSCRIPTION_CREATED
+  OTHER
+}
+
+enum NotificationPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum ProductStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+  UNLISTED
+  PENDING_DELETION
+}
+
+model ProductChangeRequest {
+  id              String              @id @default(uuid())
+  productId       String
+  product         Product             @relation(fields: [productId], references: [id], onDelete: Cascade)
+  sellerId        String
+  seller          User                @relation("SellerProductChangeRequests", fields: [sellerId], references: [id], onDelete: Cascade)
+  type            ProductChangeType
+  status          ProductChangeStatus @default(PENDING)
+  payload         Json?
+  rejectionReason String?
+  submittedAt     DateTime            @default(now())
+  reviewedAt      DateTime?
+  reviewedById    String?
+  reviewedBy      User?               @relation("ProductChangeReviewedBy", fields: [reviewedById], references: [id])
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  @@index([productId])
+  @@index([sellerId])
+  @@index([status])
+  @@index([type])
+}
+
+enum ProductChangeType {
+  UPDATE
+  DELETE
+}
+
+enum ProductChangeStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum BillingInterval {
+  MONTHLY
+  YEARLY
+}
+
+enum SubscriptionStatus {
+  PENDING
+  ACTIVE
+  CHANGE_PENDING
+  CANCEL_PENDING
+  PAST_DUE
+  CANCELED
+}
+
+enum InvoiceStatus {
+  OPEN
+  PAID
+  VOID
+  REFUNDED
+}
+
+enum ConsentType {
+  SHARE_EMAIL
+  DATA_PROTECTION
+}
+
+model WebhookEvent {
+  id           String             @id @default(uuid())
+  productId    String
+  product      Product            @relation(fields: [productId], references: [id], onDelete: Cascade)
+  eventType    String
+  payload      String             @db.Text
+  mode         WebhookEventMode   @default(LIVE) @map("eventMode")
+  status       WebhookEventStatus @default(PENDING)
+  attempts     Int                @default(0)
+  lastAttempt  DateTime?
+  nextAttemptAt DateTime?
+  deliveredAt  DateTime?
+  responseCode Int?
+  responseBody String?            @db.Text
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  @@index([productId])
+  @@index([status])
+  @@index([eventType])
+  @@index([mode])
+  @@index([nextAttemptAt])
+}
+
+enum WebhookEventStatus {
+  PENDING
+  DELIVERED
+  FAILED
+}
+
+enum WebhookEventMode {
+  LIVE
+  TEST
+}
+
+model RefundRequest {
+  id              String       @id @default(uuid())
+  buyerId         String
+  buyer           User         @relation("BuyerRefunds", fields: [buyerId], references: [id], onDelete: Cascade)
+  subscriptionId  String
+  subscription    Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  invoiceId       String
+  invoice         Invoice      @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  amountCents     Int
+  reason          String       @db.Text
+  status          RefundStatus @default(PENDING)
+  rejectionReason String?
+  providerRefundRef String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  @@index([buyerId])
+  @@index([subscriptionId])
+  @@index([status])
+}
+
+enum RefundStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  COMPLETED
+  FAILED
+}
+
+model Transaction {
+  id          String            @id @default(uuid())
+  sellerId    String
+  seller      User              @relation("SellerTransactions", fields: [sellerId], references: [id], onDelete: Cascade)
+  amountCents Int
+  type        TransactionType
+  status      TransactionStatus @default(LOCKED)
+  description String
+  invoiceId   String?
+  invoice     Invoice?          @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  payoutId    String?
+  payout      PayoutRequest?    @relation(fields: [payoutId], references: [id], onDelete: SetNull)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  @@index([sellerId])
+  @@index([status])
+  @@index([type])
+}
+
+enum TransactionType {
+  SALE
+  REFUND
+  PAYOUT
+  ADJUSTMENT
+}
+
+enum TransactionStatus {
+  LOCKED
+  AVAILABLE
+  WITHDRAWN
+}
+
+model PayoutRequest {
+  id              String        @id @default(uuid())
+  sellerId        String
+  seller          User          @relation("SellerPayouts", fields: [sellerId], references: [id], onDelete: Cascade)
+  amountCents     Int
+  status          PayoutStatus  @default(PENDING)
+  payoutEmail     String
+  rejectionReason String?
+  providerPayoutRef String?
+  transactions    Transaction[]
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([sellerId])
+  @@index([status])
+}
+
+enum PayoutStatus {
+  PENDING
+  APPROVED
+  COMPLETED
+  REJECTED
+  FAILED
+}
+
+model PlatformSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
 }

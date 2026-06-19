@@ -1,0 +1,9 @@
+# macOS
+.DS_Store
+
+# Next.js build output (also covered by frontend/.gitignore, but stub here so
+# accidental runs from repo root don't track them).
+.next/
+
+# local env file
+.env

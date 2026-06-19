@@ -16,6 +16,18 @@ jobs:
       run:
         working-directory: ./frontend
 
+    env:
+      # Prisma needs a URL to generate the client; SQLite file path is enough
+      # at build time since no queries run during `next build`.
+      DATABASE_URL: "file:./dev.db"
+      # NextAuth requires AUTH_SECRET at build time.
+      AUTH_SECRET: ${{ secrets.AUTH_SECRET || 'ci-placeholder-secret-32chars-x' }}
+      # Skip Prisma postinstall during `npm ci --ignore-scripts`; we run it
+      # explicitly in the "Generate Prisma client" step below.
+      PRISMA_GENERATE_SKIP_AUTOINSTALL: "true"
+      # Bypass auth middleware so static analysis and lint see all routes.
+      AUTH_BYPASS: "1"
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -24,15 +36,23 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --ignore-scripts
 
-      - name: Build Next.js app
-        run: npm run build
+      - name: Generate Prisma client
+        run: npx prisma generate
 
-      - name: Run lint
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Lint
         run: npm run lint -- --max-warnings=0
+
+      - name: Build
+        run: npm run build
 
   backend:
     name: Backend (Node + TS)
@@ -50,15 +70,17 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
 
-      - name: Install backend dependencies
+      - name: Install dependencies
         run: npm ci
 
-      - name: Lint backend
+      - name: Lint
         run: npm run lint -- --max-warnings=0
 
       - name: Type check
         run: npx tsc --noEmit
 
-      - name: Build backend
+      - name: Build
         run: npm run build
