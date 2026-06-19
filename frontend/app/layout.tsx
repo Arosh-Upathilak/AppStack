@@ -7,6 +7,7 @@ import SessionProvider from "@/utils/SessionProvider";
 import ToastProvider from "@/utils/ToastProvider";
 import NotificationProvider from "@/providers/NotificationProvider";
 import GoogleAuthToastWrapper from "@/utils/GoogleAuthToastWrapper";
+import AccessDeniedToast from "@/utils/AccessDeniedToast";
 const inter = Inter({
   subsets: ["latin"],
   variable: "--font-inter",
@@ -37,6 +38,7 @@ export default async function RootLayout({
         <SessionProvider session={session}>
           <SessionTimeoutWrapper />
           <GoogleAuthToastWrapper />
+          <AccessDeniedToast />
           <ToastProvider>
             <NotificationProvider>{children}</NotificationProvider>
           </ToastProvider>

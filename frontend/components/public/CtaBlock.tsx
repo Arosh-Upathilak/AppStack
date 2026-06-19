@@ -59,7 +59,7 @@ export default function CtaBlock() {
           <Link href="/register" className="ps-btn ps-btn-light" style={{ padding: '13px 26px', fontSize: 15 }}>
             Get started for free <span className="ps-arrow">→</span>
           </Link>
-          <a href="#" className="ps-btn ps-btn-ghost" style={{ padding: '13px 22px', fontSize: 15 }}>
+          <a href="mailto:sales@appstack.com?subject=AppStack%20sales%20enquiry" className="ps-btn ps-btn-ghost" style={{ padding: '13px 22px', fontSize: 15 }}>
             Talk to sales
           </a>
         </div>

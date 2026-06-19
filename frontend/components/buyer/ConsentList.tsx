@@ -23,10 +23,16 @@ export default function ConsentList() {
 
   useEffect(() => {
     (async () => {
-      const r = await fetch('/api/consents');
-      const j = await r.json();
-      setConsents(j.consents ?? []);
-      setLoading(false);
+      try {
+        const r = await fetch('/api/consents');
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const j = await r.json();
+        setConsents(j.consents ?? []);
+      } catch {
+        setConsents([]);
+      } finally {
+        setLoading(false);
+      }
     })();
   }, []);
 

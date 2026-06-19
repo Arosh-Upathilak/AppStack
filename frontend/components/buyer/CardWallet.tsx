@@ -20,11 +20,18 @@ export default function CardWallet() {
 
   const reload = useCallback(async () => {
     setLoading(true);
-    const r = await fetch('/api/payment-methods');
-    const j = await r.json();
-    setMethods(j.methods ?? []);
-    setStripeEnabled(!!j.stripeEnabled);
-    setLoading(false);
+    try {
+      const r = await fetch('/api/payment-methods');
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const j = await r.json();
+      setMethods(j.methods ?? []);
+      setStripeEnabled(!!j.stripeEnabled);
+    } catch {
+      setMethods([]);
+      setStripeEnabled(false);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => { reload(); }, [reload]);

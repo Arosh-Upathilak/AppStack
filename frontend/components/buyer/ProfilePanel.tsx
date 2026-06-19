@@ -15,7 +15,17 @@ export default function ProfilePanel() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch('/api/me').then(r => r.json()).then(j => { setMe(j); setLoading(false); });
+    (async () => {
+      try {
+        const r = await fetch('/api/me');
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        setMe(await r.json());
+      } catch {
+        setMe(null);
+      } finally {
+        setLoading(false);
+      }
+    })();
   }, []);
 
   if (loading) return <div className="muted" style={{ fontSize: 13 }}>Loading…</div>;

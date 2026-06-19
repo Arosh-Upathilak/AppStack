@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { useRouter } from 'next/navigation';
+import { useSession } from 'next-auth/react';
 import Icon from '@/components/Icon';
 import AppLogo from '@/components/AppLogo';
 import Badge from '@/components/Badge';
@@ -292,10 +293,17 @@ export default function ProductDetail({ productId, mode = 'buyer' }: ProductDeta
   const effective = annual ? annualMonthly : monthly;
   const savings = (monthly - annualMonthly) * 12;
 
+  // On the public product page, a logged-in buyer should get the real
+  // Subscribe → checkout flow rather than a dead-end sign-up CTA.
+  const { data: session } = useSession();
+  const roles = ((session?.user as any)?.role ?? []) as string[];
+  const effectiveMode: 'buyer' | 'public' =
+    mode === 'public' && roles.includes('BUYER') ? 'buyer' : mode;
+
   const backHref = mode === 'buyer' ? '/buyer/marketplace' : '/marketplace';
-  const ctaLabel = mode === 'buyer' ? 'Subscribe' : 'Sign up to subscribe';
+  const ctaLabel = effectiveMode === 'buyer' ? 'Subscribe' : 'Sign up to subscribe';
   const ctaAction = () => {
-    if (mode === 'buyer') {
+    if (effectiveMode === 'buyer') {
       setShowCheckout(true);
     } else {
       router.push(`/register?next=/marketplace/${productId}`);
@@ -441,7 +449,7 @@ export default function ProductDetail({ productId, mode = 'buyer' }: ProductDeta
             <button className="btn btn-primary btn-lg" style={{ width: '100%' }} onClick={ctaAction}>
               {ctaLabel} <Icon name="arrow_right" size={13} />
             </button>
-            <button className="btn btn-secondary" style={{ width: '100%' }}>Talk to sales</button>
+            <button className="btn btn-secondary" style={{ width: '100%' }} onClick={() => { window.location.href = `mailto:sales@appstack.com?subject=${encodeURIComponent(`Sales enquiry — ${p.name}`)}`; }}>Talk to sales</button>
             <div className="row gap-2" style={{ justifyContent: 'center', fontSize: 11, color: 'var(--ink-4)' }}>
               <Icon name="shield" size={11} /> Cancel anytime · No setup fees
             </div>
